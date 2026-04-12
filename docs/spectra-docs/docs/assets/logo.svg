@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="28 24 64 74">
+  <defs>
+    <linearGradient id="spectra-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#CF73A9"/>
+      <stop offset="100%" stop-color="#724496"/>
+    </linearGradient>
+  </defs>
+  <path d="M75 30 C55 30, 35 30, 35 48 C35 56, 42 62, 60 62 C78 62, 85 68, 85 76 C85 92, 65 92, 45 92" stroke="url(#spectra-grad)" stroke-width="6" fill="none" stroke-linecap="round"/>
+</svg>

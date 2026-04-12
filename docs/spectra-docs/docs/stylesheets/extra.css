@@ -1,0 +1,253 @@
+/* ==========================================================================
+   Spectra — Custom MkDocs Material overrides
+
+   Palette (from banner):
+     --spectra-pink:      #CF73A9
+     --spectra-dark:      #0F0510
+     --spectra-magenta:   #621546
+     --spectra-purple:    #724496
+     --spectra-muted:     #7E8A9A
+   ========================================================================== */
+
+:root {
+  --spectra-pink: #CF73A9;
+  --spectra-dark: #0F0510;
+  --spectra-magenta: #621546;
+  --spectra-purple: #724496;
+  --spectra-muted: #7E8A9A;
+}
+
+/* --------------------------------------------------------------------------
+   Theme color overrides — harmonize Material palette with banner
+   -------------------------------------------------------------------------- */
+
+/* Slate (dark) scheme */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #724496;
+  --md-primary-fg-color--light: #8b5fbf;
+  --md-primary-fg-color--dark: #5a3578;
+  --md-accent-fg-color: #CF73A9;
+  --md-default-bg-color: #0d0b12;
+  --md-default-bg-color--light: #151220;
+  --md-default-bg-color--lighter: #1c1830;
+}
+
+/* Default (light) scheme — keep purple tones but lighter */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #724496;
+  --md-primary-fg-color--light: #8b5fbf;
+  --md-primary-fg-color--dark: #5a3578;
+  --md-accent-fg-color: #CF73A9;
+}
+
+/* Header bar */
+.md-header {
+  background-color: #0F0510;
+}
+
+/* Nav tabs and search bar blend */
+.md-tabs {
+  background-color: #0F0510;
+}
+
+/* --------------------------------------------------------------------------
+   Hero banner — compact strip, not a full-page splash
+   -------------------------------------------------------------------------- */
+
+.hero-banner {
+  position: relative;
+  margin: -0.6rem -0.6rem 1.5rem -0.6rem;
+  overflow: hidden;
+  border-radius: 0 0 0.4rem 0.4rem;
+}
+
+.hero-banner img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  object-position: center center;
+  display: block;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%);
+}
+
+.hero-overlay {
+  position: relative;
+  margin-top: -2rem;
+  padding: 0 1rem 0.5rem 1rem;
+  text-align: center;
+}
+
+.hero-overlay h1 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+  letter-spacing: -0.02em;
+  color: #CF73A9;
+}
+
+.hero-overlay p:first-of-type {
+  font-size: 1.05rem;
+  opacity: 0.82;
+  max-width: 620px;
+  margin: 0 auto 0.8rem auto;
+  line-height: 1.55;
+}
+
+/* Badge row — reset image styles from banner */
+.hero-overlay p:nth-of-type(2) {
+  margin-bottom: 0.8rem;
+}
+
+.hero-overlay p:nth-of-type(2) img {
+  max-height: 22px;
+  object-fit: unset;
+  mask-image: none;
+  -webkit-mask-image: none;
+  display: inline;
+  width: auto;
+}
+
+/* CTA buttons */
+.hero-overlay p:last-of-type {
+  margin-top: 0.3rem;
+}
+
+.hero-overlay .md-button {
+  margin: 0 0.3rem;
+}
+
+.hero-overlay .md-button--primary {
+  background-color: #724496;
+  border-color: #724496;
+}
+
+.hero-overlay .md-button--primary:hover {
+  background-color: #8b5fbf;
+  border-color: #8b5fbf;
+}
+
+.hero-overlay .md-button:not(.md-button--primary) {
+  border-color: #CF73A9;
+  color: #CF73A9;
+}
+
+.hero-overlay .md-button:not(.md-button--primary):hover {
+  background-color: rgba(207, 115, 169, 0.1);
+}
+
+/* --------------------------------------------------------------------------
+   CTA footer
+   -------------------------------------------------------------------------- */
+
+.cta-footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+
+.cta-footer p:first-child {
+  font-size: 1.1rem;
+  margin-bottom: 0.8rem;
+}
+
+/* --------------------------------------------------------------------------
+   Card grid polish
+   -------------------------------------------------------------------------- */
+
+.md-typeset .grid.cards > ul > li {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border-color: rgba(114, 68, 150, 0.25);
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-2px);
+  border-color: rgba(207, 115, 169, 0.4);
+}
+
+/* Card icon color */
+.md-typeset .grid.cards .twemoji,
+.md-typeset .grid.cards .lg {
+  color: #CF73A9;
+}
+
+/* --------------------------------------------------------------------------
+   Admonition tweaks — example type uses pink accent
+   -------------------------------------------------------------------------- */
+
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  border-color: #CF73A9;
+}
+
+.md-typeset .example > .admonition-title,
+.md-typeset .example > summary {
+  background-color: rgba(207, 115, 169, 0.1);
+}
+
+.md-typeset .example > .admonition-title::before,
+.md-typeset .example > summary::before {
+  background-color: #CF73A9;
+}
+
+/* --------------------------------------------------------------------------
+   Content tabs — pink active indicator
+   -------------------------------------------------------------------------- */
+
+.md-typeset .tabbed-labels > label.tabbed-alternate--active,
+.md-typeset .tabbed-labels > label:hover {
+  color: #CF73A9;
+}
+
+.md-typeset .tabbed-labels > .tabbed-alternate--active {
+  border-color: #CF73A9;
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbar subtle tint (webkit)
+   -------------------------------------------------------------------------- */
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb {
+  background-color: rgba(114, 68, 150, 0.3);
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(114, 68, 150, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   Home page — hide auto-generated h1 (hero provides it)
+   -------------------------------------------------------------------------- */
+
+.md-content__inner > h1:first-child {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+
+@media screen and (max-width: 768px) {
+  .hero-overlay h1 {
+    font-size: 1.8rem;
+  }
+
+  .hero-banner img {
+    max-height: 120px;
+  }
+
+  .hero-overlay {
+    margin-top: -1.5rem;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .hero-overlay h1 {
+    font-size: 1.5rem;
+  }
+
+  .hero-overlay .md-button {
+    display: block;
+    margin: 0.3rem auto;
+    width: 80%;
+  }
+}

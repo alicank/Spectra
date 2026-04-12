@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Spectra.Kernel</RootNamespace>
+    <Description>Execution engine for Spectra. WorkflowRunner, ParallelScheduler, built-in steps, resilience decorators.</Description>
+    <PackageId>Spectra.Kernel</PackageId>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\Spectra.Contracts\Spectra.Contracts.csproj" />
+    <ProjectReference Include="..\Spectra.Extensions\Spectra.Extensions.csproj" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <InternalsVisibleTo Include="Spectra.Tests" />
+    <InternalsVisibleTo Include="Spectra" />
+  </ItemGroup>
+
+</Project>

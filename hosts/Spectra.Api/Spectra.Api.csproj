@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Spectra.Api</RootNamespace>
+    <Description>REST API host for Spectra workflow management.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Spectra\Spectra.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.AspNetCore\Spectra.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Contracts\Spectra.Contracts.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Spectra.Samples.AgentWithMcp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+    <ProjectReference Include="..\..\src\Spectra\Spectra.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Contracts\Spectra.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Extensions\Spectra.Extensions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Meeting notes are copied to the output directory so AppContext.BaseDirectory resolves them -->
+    <None Update="workflows\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

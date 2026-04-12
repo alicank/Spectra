@@ -1,0 +1,47 @@
+{
+  "id": "incident-response",
+  "name": "Incident Response Pipeline",
+  "description": "Classifies and summarizes infrastructure incidents using resilient multi-provider LLM routing",
+  "entryNodeId": "classify",
+  "nodes": [
+    {
+      "id": "classify",
+      "stepType": "prompt",
+      "agentId": "classifier",
+      "parameters": {
+        "fallbackPolicy": "load-balanced",
+        "userPrompt": "Classify this incident into exactly one severity: critical, major, minor.\n\nIncident report:\n{{inputs.report}}\n\nRespond with ONLY the severity word, nothing else."
+      }
+    },
+    {
+      "id": "summarize",
+      "stepType": "prompt",
+      "agentId": "summarizer",
+      "parameters": {
+        "fallbackPolicy": "failover-chain",
+        "userPrompt": "Write a concise incident summary (3-5 sentences) for the on-call engineering team.\n\nSeverity: {{Context.classify.response}}\n\nFull incident report:\n{{inputs.report}}\n\nInclude: what happened, what is affected, and recommended immediate action."
+      }
+    }
+  ],
+  "edges": [
+    { "from": "classify", "to": "summarize" }
+  ],
+  "agents": [
+    {
+      "id": "classifier",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "systemPrompt": "You are an incident severity classifier. Respond with exactly one word: critical, major, or minor.",
+      "maxTokens": 10,
+      "temperature": 0.0
+    },
+    {
+      "id": "summarizer",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "systemPrompt": "You are a senior SRE writing incident summaries for the on-call team. Be precise, actionable, and concise.",
+      "maxTokens": 300,
+      "temperature": 0.3
+    }
+  ]
+}

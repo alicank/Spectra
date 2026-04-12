@@ -1,0 +1,23 @@
+{
+  "id": "content-pipeline",
+  "name": "Content Review Pipeline",
+  "entryNodeId": "draft",
+  "nodes": [
+    {
+      "id": "draft",
+      "stepType": "draft",
+      "parameters": {
+        "topic": "{{inputs.topic}}",
+        "author": "{{inputs.author}}"
+      }
+    },
+    {
+      "id": "publish",
+      "stepType": "publish",
+      "interruptBefore": "Content must be reviewed and approved before publishing"
+    }
+  ],
+  "edges": [
+    { "from": "draft", "to": "publish" }
+  ]
+}

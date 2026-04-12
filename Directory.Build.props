@@ -1,0 +1,42 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package version (bump this for each release) -->
+    <Version>0.1.0</Version>
+
+    <!-- NuGet metadata -->
+    <Authors>Alican K. Crepin</Authors>
+    <Copyright>Copyright © 2026 Alican K. Crepin</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/alicank/spectra</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/alicank/spectra</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>ai;workflow;orchestration;llm;agents;dotnet;graph;mcp</PackageTags>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Source Link (lets users debug into Spectra source) -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols Condition="'$(CI)' != 'true'">false</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>embedded</DebugType>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Include icon and readme in every package -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="/" Link="icon.png" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Link="README.md" />
+  </ItemGroup>
+</Project>

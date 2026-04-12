@@ -1,0 +1,34 @@
+﻿{
+  "id": "retry-loop",
+  "name": "Quality Retry Loop",
+  "entryNodeId": "attempt",
+  "maxNodeIterations": 5,
+  "nodes": [
+    {
+      "id": "attempt",
+      "stepType": "attempt"
+    },
+    {
+      "id": "check",
+      "stepType": "check"
+    },
+    {
+      "id": "done",
+      "stepType": "done"
+    }
+  ],
+  "edges": [
+    { "from": "attempt", "to": "check" },
+    {
+      "from": "check",
+      "to": "attempt",
+      "condition": "Context.check.needsRetry == true",
+      "isLoopback": true
+    },
+    {
+      "from": "check",
+      "to": "done",
+      "condition": "Context.check.needsRetry == false"
+    }
+  ]
+}

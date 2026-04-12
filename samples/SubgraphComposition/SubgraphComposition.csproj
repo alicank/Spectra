@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Spectra\Spectra.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Contracts\Spectra.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Kernel\Spectra.Kernel.csproj" />
+    <ProjectReference Include="..\..\src\Spectra.Extensions\Spectra.Extensions.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="Workflows\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+  </ItemGroup>
+</Project>

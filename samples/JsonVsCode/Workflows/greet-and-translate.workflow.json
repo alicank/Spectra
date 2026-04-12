@@ -1,0 +1,37 @@
+{
+  "id": "greet-and-translate",
+  "name": "Greet and Translate",
+  "entryNodeId": "greet",
+  "nodes": [
+    {
+      "id": "greet",
+      "stepType": "agent",
+      "agentId": "assistant",
+      "parameters": {
+        "userPrompt": "Say hello to {{inputs.name}} in one sentence.",
+        "maxIterations": 1
+      }
+    },
+    {
+      "id": "translate",
+      "stepType": "agent",
+      "agentId": "assistant",
+      "parameters": {
+        "userPrompt": "Translate this to French: {{Context.greet.response}}",
+        "maxIterations": 1
+      }
+    }
+  ],
+  "edges": [
+    { "from": "greet", "to": "translate" }
+  ],
+  "agents": [
+    {
+      "id": "assistant",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a helpful assistant. Keep responses short.",
+      "maxTokens": 200
+    }
+  ]
+}

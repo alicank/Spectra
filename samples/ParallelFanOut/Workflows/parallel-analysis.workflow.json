@@ -1,0 +1,41 @@
+{
+  "id": "parallel-analysis",
+  "name": "Parallel Document Analysis",
+  "nodes": [
+    {
+      "id": "fetch",
+      "stepType": "analyze",
+      "parameters": {
+        "task": "fetch",
+        "document": "{{inputs.document}}"
+      }
+    },
+    {
+      "id": "sentiment",
+      "stepType": "analyze",
+      "parameters": {
+        "task": "sentiment",
+        "document": "{{inputs.document}}"
+      }
+    },
+    {
+      "id": "entities",
+      "stepType": "analyze",
+      "parameters": {
+        "task": "entities",
+        "document": "{{inputs.document}}"
+      }
+    },
+    {
+      "id": "merge",
+      "stepType": "merge",
+      "waitForAll": true
+    }
+  ],
+  "edges": [
+    { "from": "fetch", "to": "sentiment" },
+    { "from": "fetch", "to": "entities" },
+    { "from": "sentiment", "to": "merge" },
+    { "from": "entities", "to": "merge" }
+  ]
+}

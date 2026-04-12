@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  
+  <PropertyGroup>
+    <RootNamespace>Spectra.Contracts</RootNamespace>
+    <Description>Interfaces and data models for Spectra. Reference this to build extensions without a runtime dependency.</Description>
+    <PackageId>Spectra.Contracts</PackageId>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

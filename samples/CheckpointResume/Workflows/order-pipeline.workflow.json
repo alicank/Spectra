@@ -1,0 +1,27 @@
+{
+  "id": "order-pipeline",
+  "name": "Order Processing Pipeline",
+  "entryNodeId": "validate",
+  "nodes": [
+    {
+      "id": "validate",
+      "stepType": "validate",
+      "parameters": {
+        "orderId": "{{inputs.orderId}}",
+        "amount": "{{inputs.amount}}"
+      }
+    },
+    {
+      "id": "process",
+      "stepType": "process"
+    },
+    {
+      "id": "confirm",
+      "stepType": "confirm"
+    }
+  ],
+  "edges": [
+    { "from": "validate", "to": "process" },
+    { "from": "process", "to": "confirm" }
+  ]
+}

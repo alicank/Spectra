@@ -1,0 +1,24 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "entryNodeId": "greet",
+  "nodes": [
+    {
+      "id": "greet",
+      "stepType": "echo",
+      "parameters": {
+        "message": "Hello, {{inputs.name}}!"
+      }
+    },
+    {
+      "id": "farewell",
+      "stepType": "echo",
+      "parameters": {
+        "message": "Goodbye, {{inputs.name}}!"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "greet", "to": "farewell" }
+  ]
+}

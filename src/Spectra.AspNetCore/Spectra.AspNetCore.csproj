@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Spectra.AspNetCore</RootNamespace>
+    <Description>Optional ASP.NET Core middleware for Spectra. Adds MapSpectra() endpoints to your app.</Description>
+    <PackageId>Spectra.AspNetCore</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Spectra\Spectra.csproj" />
+    <ProjectReference Include="..\Spectra.Contracts\Spectra.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

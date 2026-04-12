@@ -1,0 +1,11 @@
+TransactionId,Desk,Counterparty,Amount,Currency,Timestamp,Status,RiskFlag
+TXN-40291,FX-7,Meridian Capital,2450000.00,USD,2026-04-07T09:15:22Z,Executed,None
+TXN-40292,FX-7,Meridian Capital,3100000.00,USD,2026-04-07T09:16:01Z,Executed,None
+TXN-40293,FX-7,BlackRock Advisors,1875000.00,EUR,2026-04-07T09:17:44Z,Executed,None
+TXN-40294,FX-7,Meridian Capital,4200000.00,USD,2026-04-07T09:18:03Z,Executed,None
+TXN-40295,FX-7,Citadel Securities,950000.00,GBP,2026-04-07T10:02:15Z,Executed,None
+TXN-40296,FX-7,Meridian Capital,2800000.00,USD,2026-04-07T10:03:58Z,Executed,None
+TXN-40297,FX-7,Meridian Capital,5100000.00,USD,2026-04-07T10:04:22Z,Executed,None
+TXN-40298,FX-7,JPMorgan Chase,1200000.00,CHF,2026-04-07T10:30:00Z,Executed,None
+TXN-40299,FX-7,Meridian Capital,3600000.00,USD,2026-04-07T10:31:12Z,Executed,None
+TXN-40300,FX-7,Goldman Sachs,2100000.00,EUR,2026-04-07T11:00:45Z,Executed,None

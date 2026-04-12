@@ -1,0 +1,55 @@
+{
+  "id": "ticket-router",
+  "name": "Support Ticket Router",
+  "entryNodeId": "classify",
+  "nodes": [
+    {
+      "id": "classify",
+      "stepType": "classify",
+      "parameters": {
+        "severity": "{{inputs.severity}}",
+        "title": "{{inputs.title}}"
+      }
+    },
+    {
+      "id": "escalate",
+      "stepType": "handle",
+      "parameters": {
+        "queue": "🔴 URGENT — Page On-Call",
+        "title": "{{inputs.title}}"
+      }
+    },
+    {
+      "id": "process",
+      "stepType": "handle",
+      "parameters": {
+        "queue": "🟡 NORMAL — Standard Queue",
+        "title": "{{inputs.title}}"
+      }
+    },
+    {
+      "id": "backlog",
+      "stepType": "handle",
+      "parameters": {
+        "queue": "🟢 BACKLOG — Low Priority",
+        "title": "{{inputs.title}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "classify",
+      "to": "escalate",
+      "condition": "Context.classify.severity == 'critical'"
+    },
+    {
+      "from": "classify",
+      "to": "process",
+      "condition": "Context.classify.severity == 'normal'"
+    },
+    {
+      "from": "classify",
+      "to": "backlog"
+    }
+  ]
+}

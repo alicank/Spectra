@@ -1,0 +1,119 @@
+site_name: Spectra
+site_description: A .NET workflow orchestration framework for AI agents
+site_url: https://alicank.github.io/Spectra/
+repo_url: https://github.com/alicank/Spectra
+repo_name: alicank/Spectra
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.png
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+
+  - Workflows:
+    - Overview: concepts/workflows.md
+    - State: concepts/state.md
+    - Conditional Edges: concepts/conditional-edges.md
+    - Parallel Execution: concepts/parallel-execution.md
+    - Cyclic Graphs: concepts/cyclic-graphs.md
+    - Steps: concepts/steps.md
+
+  - LLM & Agents:
+    - Providers: llm/providers.md
+    - Prompts: llm/prompts.md
+    - Prompt Steps: llm/prompt-steps.md
+    - Agent Step: llm/agent-step.md
+    - Sessions: concepts/sessions.md
+
+  - Multi-Agent:
+    - Overview: multi-agent/overview.md
+    - Handoff: multi-agent/handoff.md
+    - Supervisor: multi-agent/supervisor.md
+    - Guard Rails: multi-agent/guard-rails.md
+
+  - Tools:
+    - Overview: tools/overview.md
+    - MCP Integration: tools/mcp.md
+
+  - Execution & Resilience:
+    - Runner: execution/runner.md
+    - Checkpointing: execution/checkpointing.md
+    - Interrupts: execution/interrupts.md
+    - Streaming: execution/streaming.md
+    - Time Travel: execution/time-travel.md
+    - Retry & Timeout: resilience/retry.md
+    - Provider Fallback: resilience/fallback.md
+    - Tool Resilience: tools/resilience.md
+    - Caching: resilience/caching.md
+
+  - Observability:
+    - Events: observability/events.md
+    - OpenTelemetry: observability/opentelemetry.md
+    - Audit Trail: observability/audit.md
+
+  - Hosting:
+    - ASP.NET Core: hosting/aspnetcore.md
+    - Worker & Console: hosting/worker.md
+
+  - Guides:
+    - Custom Step: guides/custom-step.md
+    - Custom Provider: guides/custom-provider.md
+    - Custom Checkpoint Store: guides/build-your-own-checkpoint-store.md
+    - Custom Memory Store: guides/build-your-own-memory-store.md
+    - Custom Thread Manager: guides/build-your-own-thread-manager.md
+
+  - Architecture: architecture.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/alicank/Spectra
+    - icon: fontawesome/solid/box
+      link: https://www.nuget.org/packages/Spectra

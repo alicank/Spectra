@@ -1,0 +1,187 @@
+{
+  "id": "content-publishing-pipeline",
+  "name": "Content Publishing Pipeline",
+  "description": "Demonstrates subgraph composition: a main workflow delegates SEO optimization and social media kit generation to isolated child workflows with explicit input/output mappings.",
+  "version": 1,
+  "entryNodeId": "analyze",
+  "maxNodeIterations": 20,
+  "agents": [
+    {
+      "id": "content-analyst",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a content strategist. Given a draft article, extract:\n- Primary topic (1-2 words)\n- Target audience\n- Tone (professional/casual/technical/conversational)\n- 3 key takeaways\n\nRespond in a structured format.",
+      "maxTokens": 500
+    },
+    {
+      "id": "keyword-extractor",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are an SEO specialist. Given an article and its analysis, extract exactly 5 high-value keywords. List them comma-separated, nothing else.",
+      "maxTokens": 100
+    },
+    {
+      "id": "meta-writer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are an SEO meta description writer. Given an article and keywords, write a compelling meta description under 160 characters. Output ONLY the meta description text.",
+      "maxTokens": 100
+    },
+    {
+      "id": "title-optimizer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a headline optimizer. Given an article, its keywords, and meta description, write 3 SEO-optimized title variations. Number them 1-3.",
+      "maxTokens": 200
+    },
+    {
+      "id": "twitter-writer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a social media manager for Twitter/X. Given an article and its analysis, write a tweet (max 280 chars) with relevant hashtags. Output ONLY the tweet.",
+      "maxTokens": 100
+    },
+    {
+      "id": "linkedin-writer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a LinkedIn content creator. Given an article and its analysis, write a professional LinkedIn post (3-5 sentences) that drives engagement. Output ONLY the post.",
+      "maxTokens": 300
+    },
+    {
+      "id": "instagram-writer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are an Instagram caption writer. Given an article and its analysis, write a short engaging caption with emojis and hashtags. Output ONLY the caption.",
+      "maxTokens": 200
+    },
+    {
+      "id": "brief-compiler",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a publishing coordinator. Compile all the provided materials into a clean publishing brief with these sections:\n\n1. Content Analysis\n2. SEO Package (keywords, meta description, title options)\n3. Social Media Kit (Twitter, LinkedIn, Instagram)\n4. Publishing Checklist\n\nBe concise and professional.",
+      "maxTokens": 1500
+    }
+  ],
+  "nodes": [
+    {
+      "id": "analyze",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "content-analyst",
+        "userPrompt": "Analyze this article draft:\n\n{{inputs.draft}}"
+      }
+    },
+    {
+      "id": "seo-optimization",
+      "stepType": "subgraph",
+      "subgraphId": "seo-subgraph"
+    },
+    {
+      "id": "social-media-kit",
+      "stepType": "subgraph",
+      "subgraphId": "social-subgraph"
+    },
+    {
+      "id": "compile-brief",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "brief-compiler",
+        "userPrompt": "Compile the final publishing brief.\n\nOriginal Draft:\n{{inputs.draft}}\n\nContent Analysis:\n{{context.analyze.response}}\n\nSEO Package:\n{{context.seo-optimization.childContext}}\n\nSocial Media Kit:\n{{context.social-media-kit.childContext}}"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "analyze", "to": "seo-optimization" },
+    { "from": "seo-optimization", "to": "social-media-kit" },
+    { "from": "social-media-kit", "to": "compile-brief" }
+  ],
+  "subgraphs": [
+    {
+      "id": "seo-subgraph",
+      "workflow": {
+        "id": "seo-optimization-workflow",
+        "name": "SEO Optimization",
+        "nodes": [
+          {
+            "id": "extract-keywords",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "keyword-extractor",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nAnalysis:\n{{inputs.analysis}}\n\nExtract 5 SEO keywords."
+            }
+          },
+          {
+            "id": "write-meta",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "meta-writer",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nKeywords: {{context.extract-keywords.response}}\n\nWrite a meta description under 160 characters."
+            }
+          },
+          {
+            "id": "optimize-title",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "title-optimizer",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nKeywords: {{context.extract-keywords.response}}\nMeta: {{context.write-meta.response}}\n\nWrite 3 SEO-optimized title variations."
+            }
+          }
+        ],
+        "edges": [
+          { "from": "extract-keywords", "to": "write-meta" },
+          { "from": "write-meta", "to": "optimize-title" }
+        ],
+        "entryNodeId": "extract-keywords"
+      },
+      "inputMappings": {
+        "Inputs.draft": "draft",
+        "Context.analyze": "analysis"
+      },
+      "outputMappings": {}
+    },
+    {
+      "id": "social-subgraph",
+      "workflow": {
+        "id": "social-media-workflow",
+        "name": "Social Media Kit",
+        "nodes": [
+          {
+            "id": "write-tweet",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "twitter-writer",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nAnalysis:\n{{inputs.analysis}}\n\nWrite a tweet."
+            }
+          },
+          {
+            "id": "write-linkedin",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "linkedin-writer",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nAnalysis:\n{{inputs.analysis}}\n\nWrite a LinkedIn post."
+            }
+          },
+          {
+            "id": "write-instagram",
+            "stepType": "prompt",
+            "parameters": {
+              "agentId": "instagram-writer",
+              "userPrompt": "Article:\n{{inputs.draft}}\n\nAnalysis:\n{{inputs.analysis}}\n\nWrite an Instagram caption."
+            }
+          }
+        ],
+        "edges": [
+          { "from": "write-tweet", "to": "write-linkedin" },
+          { "from": "write-linkedin", "to": "write-instagram" }
+        ],
+        "entryNodeId": "write-tweet"
+      },
+      "inputMappings": {
+        "Inputs.draft": "draft",
+        "Context.analyze": "analysis"
+      },
+      "outputMappings": {}
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "id": "compliance-incident-pipeline",
+  "name": "Compliance Incident Analysis Pipeline",
+  "description": "End-to-end compliance incident analysis combining classification, investigation, parallel analysis, human review, automated remediation, and structured reporting.",
+  "version": 1,
+  "entryNodeId": "classify",
+  "maxConcurrency": 4,
+  "maxNodeIterations": 20,
+
+  "agents": [
+    {
+      "id": "classifier",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a compliance incident classifier for a financial services firm. Given an incident report, classify it into exactly one category: TRADE_SURVEILLANCE, AML_KYC, MARKET_ABUSE, DATA_BREACH, SANCTIONS, or OPERATIONAL_RISK. Respond with ONLY the category name, nothing else.",
+      "maxTokens": 50
+    },
+    {
+      "id": "investigator",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a compliance investigator at a financial services firm. You have access to tools to search internal systems and query transaction databases. Given an incident, thoroughly investigate by:\n1. Searching for related historical incidents\n2. Querying the transaction database for suspicious patterns\n3. Compiling a detailed findings summary\n\nBe thorough and cite specific transaction IDs and patterns you discover.",
+      "maxTokens": 1500
+    },
+    {
+      "id": "risk-analyst",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a quantitative risk analyst. Given investigation findings about a compliance incident, produce a risk assessment that includes:\n- Risk severity (Critical/High/Medium/Low)\n- Financial exposure estimate\n- Probability of regulatory action\n- Recommended risk mitigation steps\nBe specific and quantitative where possible.",
+      "maxTokens": 1000
+    },
+    {
+      "id": "regulatory-analyst",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a regulatory affairs specialist. Given investigation findings about a compliance incident, produce a regulatory impact assessment that includes:\n- Applicable regulations (MiFID II, Dodd-Frank, MAR, etc.)\n- Reporting obligations and deadlines\n- Potential penalties and sanctions\n- Recommended regulatory engagement strategy\nCite specific regulatory articles where applicable.",
+      "maxTokens": 1000
+    },
+    {
+      "id": "report-writer",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a senior compliance officer writing the final incident report. Synthesize all findings into a structured executive report with these sections:\n1. Executive Summary (2-3 sentences)\n2. Incident Classification\n3. Investigation Findings\n4. Risk Assessment\n5. Regulatory Impact\n6. Remediation Actions Taken\n7. Recommendations\n\nBe concise, professional, and actionable.",
+      "maxTokens": 2000
+    },
+    {
+      "id": "code-agent",
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "systemPrompt": "You are a data engineering specialist. You write C# scripts to modify CSV files for compliance remediation. When asked to flag transactions, you should:\n1. Read the CSV file using the read_file tool\n2. Write a modified version using the write_file tool that updates the RiskFlag column for the specified transactions\n\nAlways preserve the CSV header and all existing data. Only modify the RiskFlag column for matching transactions.",
+      "maxTokens": 1500
+    }
+  ],
+
+  "nodes": [
+    {
+      "id": "classify",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "classifier",
+        "userPrompt": "Classify this compliance incident:\n\n{{inputs.incidentReport}}"
+      }
+    },
+    {
+      "id": "investigate",
+      "stepType": "agent",
+      "parameters": {
+        "agentId": "investigator",
+        "userPrompt": "Investigate the following {{context.classify.response}} incident:\n\n{{inputs.incidentReport}}\n\nUse your tools to search for related incidents and query the transaction database.",
+        "maxIterations": 5
+      }
+    },
+    {
+      "id": "store-findings",
+      "stepType": "memory.store",
+      "parameters": {
+        "namespace": "incident-{{inputs.incidentId}}",
+        "key": "investigation-findings",
+        "content": "{{context.investigate.response}}",
+        "tags": "investigation,compliance"
+      }
+    },
+    {
+      "id": "risk-assessment",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "risk-analyst",
+        "userPrompt": "Analyze the risk for this compliance incident.\n\nClassification: {{context.classify.response}}\n\nInvestigation Findings:\n{{context.investigate.response}}"
+      }
+    },
+    {
+      "id": "regulatory-impact",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "regulatory-analyst",
+        "userPrompt": "Assess the regulatory impact of this compliance incident.\n\nClassification: {{context.classify.response}}\n\nInvestigation Findings:\n{{context.investigate.response}}"
+      }
+    },
+    {
+      "id": "merge-analyses",
+      "stepType": "merge_results",
+      "parameters": {
+        "sources": ["risk-assessment", "regulatory-impact"]
+      }
+    },
+    {
+      "id": "human-review",
+      "stepType": "review_gate",
+      "interruptBefore": "Compliance officer must review analysis results before automated remediation proceeds. Review the risk assessment and regulatory impact analysis."
+    },
+    {
+      "id": "remediation",
+      "stepType": "agent",
+      "parameters": {
+        "agentId": "code-agent",
+        "userPrompt": "Read the file at ./data/flagged-transactions.csv. Based on these investigation findings:\n\n{{context.investigate.response}}\n\nIdentify transactions involving the suspicious counterparty (Meridian Capital) and update their RiskFlag column from 'None' to 'FLAGGED'. Write the updated CSV back to ./data/flagged-transactions.csv.",
+        "maxIterations": 5
+      }
+    },
+    {
+      "id": "generate-report",
+      "stepType": "prompt",
+      "parameters": {
+        "agentId": "report-writer",
+        "userPrompt": "Generate the final compliance incident report.\n\nIncident ID: {{inputs.incidentId}}\nClassification: {{context.classify.response}}\n\nInvestigation Findings:\n{{context.investigate.response}}\n\nRisk Assessment:\n{{context.risk-assessment.response}}\n\nRegulatory Impact:\n{{context.regulatory-impact.response}}\n\nRemediation Actions:\n{{context.remediation.response}}"
+      }
+    }
+  ],
+
+  "edges": [
+    { "from": "classify", "to": "investigate" },
+    { "from": "investigate", "to": "store-findings" },
+    { "from": "store-findings", "to": "risk-assessment" },
+    { "from": "risk-assessment", "to": "regulatory-impact" },
+    { "from": "regulatory-impact", "to": "merge-analyses" },
+    { "from": "merge-analyses", "to": "human-review" },
+    { "from": "human-review", "to": "remediation" },
+    { "from": "remediation", "to": "generate-report" }
+  ],
+
+  "subgraphs": []
+}
