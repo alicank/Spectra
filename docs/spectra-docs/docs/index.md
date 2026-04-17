@@ -95,9 +95,11 @@ var workflow = WorkflowBuilder.Create("hello")
     .Build();
 
 var runner = host.Services.GetRequiredService<IWorkflowRunner>();
-var state = new WorkflowState { ["inputs.name"] = "World" };
+var state = new WorkflowState();
+state.Inputs["name"] = "World";
 var result = await runner.RunAsync(workflow, state);
-Console.WriteLine(result["nodes.greet.output"]);
+var output = (IDictionary<string, object?>)result.Context["greet"];
+Console.WriteLine(output["response"]);
 ```
 
 ```bash
@@ -113,8 +115,7 @@ dotnet run
 
 ## Chain steps together
 
-The real power is connecting steps. Each node writes output to shared state, and later nodes reference it with `{{nodes.stepId.output}}`.
-
+The real power is connecting steps. Each node writes output to `Context` under its id, and later nodes reference it with `{{Context.greet.response}}` in prompt templates.
 === "C#"
 
     ```csharp

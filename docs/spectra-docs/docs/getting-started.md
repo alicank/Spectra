@@ -102,14 +102,17 @@ var workflow = WorkflowBuilder.Create("hello")
 
 var runner = host.Services.GetRequiredService<IWorkflowRunner>();
 
-var state = new WorkflowState
-{
-    ["inputs.name"] = "World"
-};
+var state = new WorkflowState();
+state.Inputs["name"] = "World";
 
 var result = await runner.RunAsync(workflow, state);
 
-Console.WriteLine(result["nodes.greet.output"]);
+if (result.Context.TryGetValue("greet", out var greetObj)
+    && greetObj is IDictionary<string, object?> greetDict
+    && greetDict.TryGetValue("response", out var greeting))
+{
+    Console.WriteLine(greeting);
+}
 ```
 
 ---
@@ -149,24 +152,31 @@ This creates a workflow with one node:
 ### 4. Run with state
 
 ```csharp
-var state = new WorkflowState
-{
-    ["inputs.name"] = "World"
-};
+var state = new WorkflowState();
+state.Inputs["name"] = "World";
 ```
-
 `WorkflowState` is the shared data for the run.
 
-In Spectra, a common convention is:
+It has three dictionaries:
 
-- `inputs.*` for incoming values
-- `nodes.<nodeId>.output` for node results
+- `Inputs` for incoming values provided at launch time
+- `Context` for data produced by steps during execution
+- `Artifacts` for named outputs like files or results
 
-That is why the final output is read from:
+When a node completes, Spectra writes its outputs into `Context` under the node's id. So the greeting is read from:
 
 ```csharp
-result["nodes.greet.output"]
+result.Context["greet"]
 ```
+
+### Output key not found
+
+Make sure you read the node output using the correct node id:
+
+```csharp
+result.Context["greet"]
+```
+
 
 ---
 

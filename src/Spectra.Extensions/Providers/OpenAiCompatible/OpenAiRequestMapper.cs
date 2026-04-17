@@ -191,11 +191,18 @@ internal static class OpenAiRequestMapper
 
             foreach (var param in tool.Parameters)
             {
-                properties[param.Name] = new JsonObject
+                if (param.RawSchema is not null)
                 {
-                    ["type"] = param.Type,
-                    ["description"] = param.Description
-                };
+                    properties[param.Name] = JsonNode.Parse(param.RawSchema);
+                }
+                else
+                {
+                    properties[param.Name] = new JsonObject
+                    {
+                        ["type"] = param.Type,
+                        ["description"] = param.Description
+                    };
+                }
 
                 if (param.Required)
                     required.Add(JsonValue.Create(param.Name));

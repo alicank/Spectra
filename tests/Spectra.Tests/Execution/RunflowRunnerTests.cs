@@ -494,7 +494,7 @@ public class WorkflowRunnerTests
     // ─── infinite loop detection ────────────────────────────────────
 
     [Fact]
-    public async Task DetectsInfiniteLoop()
+    public async Task DetectsCycleAtValidation()
     {
         var callCount = 0;
         var registry = new InMemoryStepRegistry();
@@ -523,7 +523,7 @@ public class WorkflowRunnerTests
         var state = await CreateRunner(registry).RunAsync(workflow);
 
         Assert.NotEmpty(state.Errors);
-        Assert.Contains(state.Errors, e => e.Contains("Infinite loop"));
+        Assert.Contains(state.Errors, e => e.Contains("cycle"));
     }
 
     // ─── loopback / cycle support ─────────────────────────────────
@@ -1007,6 +1007,15 @@ public class WorkflowRunnerTests
         {
             Id = "agent-test",
             EntryNodeId = "a",
+            Agents =
+            [
+                new AgentDefinition
+                {
+                    Id = "claude-3",
+                    Provider = "anthropic",
+                    Model = "claude-3"
+                }
+            ],
             Nodes =
             [
                 new NodeDefinition { Id = "a", StepType = "AgentStep", AgentId = "claude-3" }

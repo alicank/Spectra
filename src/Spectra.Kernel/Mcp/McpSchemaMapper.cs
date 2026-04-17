@@ -43,7 +43,8 @@ internal static class McpSchemaMapper
                         Name = prop.Name,
                         Type = ExtractType(prop.Value),
                         Description = ExtractDescription(prop.Value),
-                        Required = requiredSet.Contains(prop.Name)
+                        Required = requiredSet.Contains(prop.Name),
+                        RawSchema = prop.Value.GetRawText()
                     });
                 }
             }
@@ -96,7 +97,20 @@ internal static class McpSchemaMapper
     private static string ExtractType(JsonElement propertySchema)
     {
         if (propertySchema.TryGetProperty("type", out var typeProp))
+        {
+            if (typeProp.ValueKind == JsonValueKind.Array)
+            {
+                // JSON Schema nullable: ["string", "null"] → pick the non-null type
+                foreach (var item in typeProp.EnumerateArray())
+                {
+                    var val = item.GetString();
+                    if (val is not null && !val.Equals("null", StringComparison.OrdinalIgnoreCase))
+                        return val;
+                }
+            }
+
             return typeProp.GetString() ?? "string";
+        }
         return "string";
     }
 
