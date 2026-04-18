@@ -24,6 +24,7 @@ public static class SpectraEndpointExtensions
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         WriteIndented = false
     };
 
@@ -32,7 +33,11 @@ public static class SpectraEndpointExtensions
     /// Endpoints: POST /run, GET /stream, GET /checkpoints/{runId}, POST /interrupt/{runId},
     /// POST /fork/{runId}.
     /// </summary>
-    public static IEndpointRouteBuilder MapSpectra(
+    /// <returns>
+    /// A convention builder so callers can chain <c>.RequireAuthorization()</c>,
+    /// <c>.RequireCors()</c>, <c>.WithTags()</c>, etc.
+    /// </returns>
+    public static RouteGroupBuilder MapSpectra(
         this IEndpointRouteBuilder endpoints,
         string prefix = "/spectra")
     {
@@ -42,13 +47,27 @@ public static class SpectraEndpointExtensions
         // POST /spectra/run — execute a workflow
         group.MapPost("/run", async (HttpContext ctx, IWorkflowRunner runner) =>
         {
-            var request = await ctx.Request.ReadFromJsonAsync<RunWorkflowRequest>(JsonOptions);
+            RunWorkflowRequest? request;
+            try
+            {
+                request = await ctx.Request.ReadFromJsonAsync<RunWorkflowRequest>(JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+            }
+
             if (request is null)
-                return Results.BadRequest(new { error = "Invalid request body" });
+                return Results.BadRequest(new { error = "Request body is required" });
 
             var workflow = ResolveWorkflow(ctx.RequestServices, request.WorkflowId, request.Workflow);
             if (workflow is null)
-                return Results.BadRequest(new { error = $"Workflow '{request.WorkflowId}' not found" });
+            {
+                var which = string.IsNullOrEmpty(request.WorkflowId)
+                    ? "(no workflowId or inline workflow provided)"
+                    : $"'{request.WorkflowId}'";
+                return Results.BadRequest(new { error = $"Workflow {which} not found" });
+            }
 
             var state = new WorkflowState();
             if (request.Inputs is not null)
@@ -60,16 +79,7 @@ public static class SpectraEndpointExtensions
             var runContext = BuildRunContext(ctx);
             var result = await runner.RunAsync(workflow, state, runContext, ctx.RequestAborted);
 
-            return Results.Ok(new RunWorkflowResponse
-            {
-                RunId = result.RunId,
-                WorkflowId = workflow.Id,
-                Success = result.Errors.Count == 0,
-                Errors = result.Errors,
-                Artifacts = result.Artifacts,
-                Context = result.Context,
-                CurrentNodeId = result.CurrentNodeId
-            });
+            return Results.Ok(ToRunResponse(result, workflow.Id));
         });
 
         // GET /spectra/stream?workflowId=...&mode=... — stream workflow events via SSE
@@ -86,9 +96,15 @@ public static class SpectraEndpointExtensions
 
             var streamMode = Enum.TryParse<StreamMode>(mode, true, out var m) ? m : StreamMode.Updates;
 
+            // SSE response headers — set and flush before first event so browsers open the stream immediately
+            ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = "text/event-stream";
             ctx.Response.Headers.CacheControl = "no-cache";
             ctx.Response.Headers.Connection = "keep-alive";
+            ctx.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx buffering
+
+            await ctx.Response.WriteAsync(": connected\n\n", ctx.RequestAborted);
+            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
             var runContext = BuildRunContext(ctx);
             await foreach (var evt in runner.StreamAsync(workflow, streamMode, null, runContext, ctx.RequestAborted))
@@ -106,7 +122,7 @@ public static class SpectraEndpointExtensions
             if (store is null)
                 return Results.BadRequest(new { error = "No checkpoint store configured" });
 
-            var checkpoint = await store.LoadAsync(runId);
+            var checkpoint = await store.LoadAsync(runId, ctx.RequestAborted);
             if (checkpoint is null)
                 return Results.NotFound(new { error = $"No checkpoint found for run '{runId}'" });
 
@@ -118,7 +134,14 @@ public static class SpectraEndpointExtensions
                 StepsCompleted = checkpoint.StepsCompleted,
                 LastCompletedNodeId = checkpoint.LastCompletedNodeId,
                 NextNodeId = checkpoint.NextNodeId,
-                UpdatedAt = checkpoint.UpdatedAt
+                UpdatedAt = checkpoint.UpdatedAt,
+                PendingInterrupt = checkpoint.PendingInterrupt is null ? null : new PendingInterruptInfo
+                {
+                    NodeId = checkpoint.PendingInterrupt.NodeId,
+                    Reason = checkpoint.PendingInterrupt.Reason,
+                    Title = checkpoint.PendingInterrupt.Title,
+                    Description = checkpoint.PendingInterrupt.Description
+                }
             });
         });
 
@@ -126,47 +149,55 @@ public static class SpectraEndpointExtensions
         group.MapPost("/interrupt/{runId}", async (HttpContext ctx, string runId,
             IWorkflowRunner runner) =>
         {
-            var request = await ctx.Request.ReadFromJsonAsync<InterruptResponseRequest>(JsonOptions);
+            InterruptResponseRequest? request;
+            try
+            {
+                request = await ctx.Request.ReadFromJsonAsync<InterruptResponseRequest>(JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+            }
+
             if (request is null)
-                return Results.BadRequest(new { error = "Invalid request body" });
+                return Results.BadRequest(new { error = "Request body is required" });
 
             var workflow = ResolveWorkflow(ctx.RequestServices, request.WorkflowId, null);
             if (workflow is null)
                 return Results.BadRequest(new { error = $"Workflow '{request.WorkflowId}' not found" });
 
-            var interruptResponse = request.Approved
-                ? InterruptResponse.ApprovedResponse(
-                    payload: request.Data,
-                    respondedBy: request.RespondedBy,
-                    comment: request.Comment)
-                : InterruptResponse.RejectedResponse(
-                    respondedBy: request.RespondedBy,
-                    comment: request.Comment,
-                    payload: request.Data);
+            // Resolve the interrupt status: prefer explicit `status` field, fall back to `approved` bool.
+            var status = ResolveInterruptStatus(request);
+            var interruptResponse = new InterruptResponse
+            {
+                Status = status,
+                RespondedBy = request.RespondedBy ?? ctx.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                Comment = request.Comment,
+                Payload = request.Data
+            };
 
-            // TODO: Wire RunContext into ResumeWithResponseAsync when the interface supports it
             var result = await runner.ResumeWithResponseAsync(
                 workflow, runId, interruptResponse, ctx.RequestAborted);
 
-            return Results.Ok(new RunWorkflowResponse
-            {
-                RunId = result.RunId,
-                WorkflowId = workflow.Id,
-                Success = result.Errors.Count == 0,
-                Errors = result.Errors,
-                Artifacts = result.Artifacts,
-                Context = result.Context,
-                CurrentNodeId = result.CurrentNodeId
-            });
+            return Results.Ok(ToRunResponse(result, workflow.Id));
         });
 
         // POST /spectra/fork/{runId} — fork from a checkpoint and run
         group.MapPost("/fork/{runId}", async (HttpContext ctx, string runId,
             IWorkflowRunner runner) =>
         {
-            var request = await ctx.Request.ReadFromJsonAsync<ForkRequest>(JsonOptions);
+            ForkRequest? request;
+            try
+            {
+                request = await ctx.Request.ReadFromJsonAsync<ForkRequest>(JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+            }
+
             if (request is null)
-                return Results.BadRequest(new { error = "Invalid request body" });
+                return Results.BadRequest(new { error = "Request body is required" });
 
             var workflow = ResolveWorkflow(ctx.RequestServices, request.WorkflowId, null);
             if (workflow is null)
@@ -176,20 +207,13 @@ public static class SpectraEndpointExtensions
                 workflow, runId, request.CheckpointIndex,
                 request.NewRunId, cancellationToken: ctx.RequestAborted);
 
-            return Results.Ok(new RunWorkflowResponse
-            {
-                RunId = result.RunId,
-                WorkflowId = workflow.Id,
-                Success = result.Errors.Count == 0,
-                Errors = result.Errors,
-                Artifacts = result.Artifacts,
-                Context = result.Context,
-                CurrentNodeId = result.CurrentNodeId
-            });
+            return Results.Ok(ToRunResponse(result, workflow.Id));
         });
 
-        return endpoints;
+        return group;
     }
+
+    // ── Helpers ──────────────────────────────────────────────────
 
     private static WorkflowDefinition? ResolveWorkflow(
         IServiceProvider services, string? workflowId, WorkflowDefinition? inline)
@@ -197,22 +221,58 @@ public static class SpectraEndpointExtensions
         if (inline is not null)
             return inline;
 
-        if (workflowId is null)
+        if (string.IsNullOrEmpty(workflowId))
             return null;
 
         var store = services.GetService<IWorkflowStore>();
         return store?.Get(workflowId);
     }
 
+    private static RunWorkflowResponse ToRunResponse(WorkflowState result, string workflowId) => new()
+    {
+        RunId = result.RunId,
+        WorkflowId = workflowId,
+        Status = result.Status.ToString(),
+        Success = result.Status == WorkflowRunStatus.Completed,
+        Errors = result.Errors,
+        Artifacts = result.Artifacts,
+        Context = result.Context,
+        CurrentNodeId = result.CurrentNodeId
+    };
+
+    /// <summary>
+    /// Resolves the interrupt status from the request. Prefers the explicit <c>status</c> field
+    /// when present (case-insensitive match against <see cref="InterruptStatus"/>), otherwise
+    /// falls back to the <c>approved</c> boolean for backward-compatible simple clients.
+    /// </summary>
+    private static InterruptStatus ResolveInterruptStatus(InterruptResponseRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Status) &&
+            Enum.TryParse<InterruptStatus>(request.Status, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        return request.Approved ? InterruptStatus.Approved : InterruptStatus.Rejected;
+    }
+
     /// <summary>
     /// Builds a <see cref="RunContext"/> from the current <see cref="HttpContext"/>.
-    /// Maps the authenticated <see cref="ClaimsPrincipal"/> into Spectra's identity POCO.
     /// </summary>
     private static RunContext BuildRunContext(HttpContext ctx)
     {
         var user = ctx.User;
         if (user?.Identity?.IsAuthenticated != true)
-            return RunContext.Anonymous;
+        {
+            return new RunContext
+            {
+                CorrelationId = ctx.TraceIdentifier,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["remoteIp"] = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"
+                }
+            };
+        }
 
         return new RunContext
         {
@@ -220,9 +280,7 @@ public static class SpectraEndpointExtensions
                   ?? user.FindFirst("sub")?.Value,
             TenantId = user.FindFirst("tenant_id")?.Value
                     ?? user.FindFirst("tid")?.Value,
-            Roles = user.FindAll(ClaimTypes.Role)
-                        .Select(c => c.Value)
-                        .ToList(),
+            Roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList(),
             Claims = user.Claims.ToList(),
             CorrelationId = ctx.TraceIdentifier,
             Metadata = new Dictionary<string, string>
@@ -248,6 +306,13 @@ public class RunWorkflowResponse
 {
     public string RunId { get; set; } = "";
     public string WorkflowId { get; set; } = "";
+
+    /// <summary>
+    /// Terminal status of the run: "Completed", "Failed", "Cancelled", "Interrupted", "AwaitingInput".
+    /// </summary>
+    public string Status { get; set; } = "";
+
+    /// <summary>True only when <see cref="Status"/> is "Completed".</summary>
     public bool Success { get; set; }
     public List<string> Errors { get; set; } = [];
     public Dictionary<string, object?> Artifacts { get; set; } = [];
@@ -265,13 +330,45 @@ public class CheckpointResponse
     public string? LastCompletedNodeId { get; set; }
     public string? NextNodeId { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// If the run is paused waiting for an interrupt response, this surfaces the
+    /// details the human approver needs to make a decision. Null for normal runs.
+    /// </summary>
+    public PendingInterruptInfo? PendingInterrupt { get; set; }
 }
 
-/// <summary>Request body for POST /spectra/interrupt/{runId}.</summary>
+/// <summary>Describes a pending interrupt surfaced on the checkpoint response.</summary>
+public class PendingInterruptInfo
+{
+    public string NodeId { get; set; } = "";
+    public string? Reason { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+}
+
+/// <summary>
+/// Request body for POST /spectra/interrupt/{runId}.
+/// Clients may send either:
+///   - <c>{ "approved": true/false }</c> for simple approve/reject flows, or
+///   - <c>{ "status": "Approved" | "Rejected" | "TimedOut" | "Cancelled" }</c> for full control.
+/// If both are present, <c>status</c> wins.
+/// </summary>
 public class InterruptResponseRequest
 {
     public string WorkflowId { get; set; } = "";
+
+    /// <summary>
+    /// Simple form: true = approve, false = reject. Used when <see cref="Status"/> is not set.
+    /// </summary>
     public bool Approved { get; set; }
+
+    /// <summary>
+    /// Full form: "Approved", "Rejected", "TimedOut", "Cancelled" (case-insensitive).
+    /// Takes precedence over <see cref="Approved"/> when present.
+    /// </summary>
+    public string? Status { get; set; }
+
     public string? RespondedBy { get; set; }
     public string? Comment { get; set; }
     public Dictionary<string, object?>? Data { get; set; }

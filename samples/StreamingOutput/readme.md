@@ -1,27 +1,32 @@
+````markdown
 # StreamingOutput
 
-Streams LLM tokens to the console in real-time — no waiting for the full response. One provider, one node, live output.
+Streams LLM tokens to the console in real time.
+
+This sample uses `runner.StreamAsync(...)` instead of `RunAsync(...)`, so output appears as it is generated.
 
 ## What it demonstrates
 
-- `runner.StreamAsync()` instead of `runner.RunAsync()` — returns `IAsyncEnumerable<WorkflowEvent>`
-- `StreamMode.Tokens` — yields every event type including per-token deltas
-- `TokenStreamEvent` — carries `Token` (text chunk) and `TokenIndex` (sequential position)
-- `StepCompletedEvent` — fires when a node finishes, includes `Duration`
-- `WorkflowCompletedEvent` — fires when the entire workflow completes
-- Pattern matching on `WorkflowEvent` subtypes for consumer-side filtering
+- streaming workflow events with `runner.StreamAsync(...)`
+- using `StreamMode.Tokens` for live token output
+- handling `TokenStreamEvent` as tokens arrive
+- handling `StepCompletedEvent` and `WorkflowCompletedEvent`
+- counting streamed tokens and completed steps
 
-## Stream Modes
+## Flow
 
-| Mode | What's Included | Use Case |
-|------|----------------|----------|
-| `Tokens` | Everything — including individual token deltas | Live LLM output in chat UIs |
-| `Messages` | Everything except `TokenStreamEvent` | Step-level progress without per-token noise |
-| `Updates` | `StepCompleted`, `StateChanged`, `WorkflowCompleted` only | Progress bars, dashboards |
-| `Values` | `StateChanged` and `WorkflowCompleted` only | Reactive state consumers |
-| `Custom` | Everything (same as Tokens) | Consumer-side filtering |
+```mermaid
+flowchart LR
+    A[workflow input] --> B[prompt node]
+    B --> C[token stream]
+    C --> D[console output]
+    B --> E[step completed]
+    E --> F[workflow completed]
+````
 
 ## Prerequisites
+
+Set `OPENROUTER_API_KEY` before running the sample.
 
 ```bash
 # bash
@@ -38,10 +43,19 @@ cd samples/StreamingOutput
 dotnet run
 ```
 
-## StreamAsync vs RunAsync
+## Example output
 
-`RunAsync` blocks until the entire workflow completes, then returns a `WorkflowResult` with the final state. Use it for batch processing or when you don't need intermediate visibility.
+```text
+--- Streaming tokens ---
 
-`StreamAsync` yields events as they happen — including individual LLM tokens. Use it for real-time UIs, SSE endpoints, progress indicators, or any scenario where latency-to-first-token matters.
+Graph-based AI orchestration is a method for designing and managing complex AI workflows by modeling them as directed graphs...
 
-Both methods produce identical final state. Streaming doesn't change what the workflow does — only how you observe it.
+[explain] completed in 00:00:11.4025694
+
+Workflow finished — success: True
+
+Tokens streamed: 129 | Steps completed: 1
+```
+
+```
+```

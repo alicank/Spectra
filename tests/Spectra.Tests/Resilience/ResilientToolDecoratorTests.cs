@@ -25,21 +25,23 @@ public class ResilientToolDecoratorTests
     }
 
     [Fact]
-    public async Task Name_DelegatesToInner()
+    public Task Name_DelegatesToInner()
     {
         var inner = new FakeTool("my-tool", ToolResult.Ok("ok"));
         var (sut, _, _) = CreateDecorator(inner);
 
         Assert.Equal("my-tool", sut.Name);
+        return Task.CompletedTask;
     }
 
     [Fact]
-    public async Task Definition_DelegatesToInner()
+    public Task Definition_DelegatesToInner()
     {
         var inner = new FakeTool("my-tool", ToolResult.Ok("ok"));
         var (sut, _, _) = CreateDecorator(inner);
 
         Assert.Equal("my-tool", sut.Definition.Name);
+        return Task.CompletedTask;
     }
 
     // --- Failure recording ---

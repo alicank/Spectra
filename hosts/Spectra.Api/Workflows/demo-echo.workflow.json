@@ -1,0 +1,25 @@
+{
+  "id": "demo-echo",
+  "name": "Demo Echo",
+  "description": "A minimal two-step workflow that echoes an input message twice. Used to verify /run, /stream, /checkpoints, and /fork.",
+  "entryNodeId": "greet",
+  "nodes": [
+    {
+      "id": "greet",
+      "stepType": "echo",
+      "parameters": {
+        "message": "Hello, {{inputs.name}}!"
+      }
+    },
+    {
+      "id": "farewell",
+      "stepType": "echo",
+      "parameters": {
+        "message": "Goodbye, {{inputs.name}}!"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "greet", "to": "farewell" }
+  ]
+}

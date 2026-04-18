@@ -1,0 +1,26 @@
+{
+  "id": "demo-approval",
+  "name": "Demo Approval",
+  "description": "Two-step workflow that pauses before the second step and waits for an interrupt response. Used to verify /interrupt.",
+  "entryNodeId": "prepare",
+  "nodes": [
+    {
+      "id": "prepare",
+      "stepType": "echo",
+      "parameters": {
+        "message": "Preparing action '{{inputs.action}}' for approval..."
+      }
+    },
+    {
+      "id": "execute",
+      "stepType": "approval-ack",
+      "interruptBefore": "Human approval required before executing action",
+      "parameters": {
+        "action": "{{inputs.action}}"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "prepare", "to": "execute" }
+  ]
+}

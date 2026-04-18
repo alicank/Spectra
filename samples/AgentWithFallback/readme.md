@@ -1,17 +1,39 @@
 # AgentWithFallback
 
-An incident response pipeline that classifies and summarizes infrastructure incidents using two resilient LLM routing strategies — RoundRobin load-balancing across models and Failover across providers with a quality gate.
+Route LLM calls through fallback policies instead of hard-coding a single model.
+
+This sample runs a two-step incident workflow:
+
+* `classify` uses a **RoundRobin** policy
+* `summarize` uses a **Failover** policy with a quality gate
 
 ## What it demonstrates
 
-- **RoundRobin fallback policy** — the `classify` node rotates between `claude-sonnet-4-20250514` and `claude-haiku-3-5-20241022` on each request; if the selected model fails, the other is tried automatically
-- **Failover fallback policy** — the `summarize` node tries Anthropic first; on failure (or if the quality gate rejects the response), it falls back to OpenRouter's `gpt-4o-mini`
-- **MinLengthQualityGate** — rejects summaries shorter than 50 characters, triggering a transparent fallback to the next provider
-- **FallbackTriggeredEvent / QualityGateRejectedEvent** — visible in the console event stream when a fallback activates
-- **Multi-provider registration** — `AddAnthropic` + `AddOpenRouter` in the same `AddSpectra` block
-- **JSON workflow with `fallbackPolicy` parameter** — the policy name is set per-node in the workflow JSON, not in code
+* registering multiple LLM providers in one app
+* using named fallback policies
+* load-balancing requests with `RoundRobin`
+* falling back across providers with `Failover`
+* attaching a `fallbackPolicy` to a workflow node
+* seeing which model actually handled each step
 
-## Prerequisites
+## Flow
+
+```mermaid
+flowchart LR
+    A[classify] --> B[summarize]
+
+    subgraph RoundRobin policy
+        R1[Anthropic Sonnet]
+        R2[Anthropic Haiku]
+    end
+
+    subgraph Failover policy
+        F1[Anthropic Sonnet]
+        F2[OpenRouter GPT-4o mini]
+    end
+```
+
+## Run it
 
 Set both API keys:
 
@@ -25,44 +47,101 @@ $env:ANTHROPIC_API_KEY="your-anthropic-key"
 $env:OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
-## The graph
-
-```
-┌────────────┐     ┌──────────────┐
-│  classify   │────▶│  summarize   │
-└────────────┘     └──────────────┘
-  RoundRobin         Failover
-  sonnet ↔ haiku     anthropic → openrouter
-                     + MinLengthQualityGate(50)
-```
-
-## Run it
+Then run:
 
 ```bash
 cd samples/AgentWithFallback
 dotnet run
 ```
 
-Or pass a custom incident report:
+Or pass your own incident report:
 
 ```bash
 dotnet run -- "Redis cluster in eu-west-1 lost quorum at 14:30 UTC. 3 of 5 nodes unreachable. Cache miss rate spiked to 87%. Application latency increased 4x."
 ```
 
-## What to look for
+## What happens
 
-- **RoundRobin rotation** — run the sample multiple times; the `classify` node alternates which model it starts with (check the `model` field in the output and the `FallbackTriggeredEvent` if the first model fails)
-- **Quality gate** — if the summarize response is shorter than 50 characters, you'll see a `QualityGateRejectedEvent` followed by a `FallbackTriggeredEvent` as it switches from Anthropic to OpenRouter
-- **Transparent failover** — temporarily set an invalid `ANTHROPIC_API_KEY` to force all requests through the OpenRouter fallback path; the workflow completes normally with a different model
+The workflow has two prompt nodes:
 
-## Fallback policies explained
+* `classify` decides the severity
+* `summarize` writes the incident summary
 
-| Policy | Strategy | Behaviour |
-|--------|----------|-----------|
-| `load-balanced` | RoundRobin | Rotates the starting model on each request. If selected model fails, cascades to the next. |
-| `failover-chain` | Failover | Always tries providers in order. Moves to next only on failure or quality gate rejection. |
+Each node uses a different fallback policy:
 
-## Next steps
+* `load-balanced` rotates between two Anthropic models
+* `failover-chain` tries Anthropic first, then OpenRouter if needed
 
-- [LLM Resilience](../../docs/spectra-docs/docs/llm/resilience.md) — retry, caching, and fallback deep-dive
-- [Provider Fallback](../../docs/spectra-docs/docs/resilience/fallback.md) — weighted strategies, split routing, custom quality gates
+## Example output
+
+```text
+═══ INCIDENT RESPONSE ═══
+  Severity : critical
+  Model    : anthropic/claude-haiku-4-5-20251001
+
+  Summary:
+  **Incident Summary - Critical**
+
+  At 03:47 UTC, the primary PostgreSQL replica in us-east-1 failed due to a long-running analytical query...
+  
+  Model    : anthropic/claude-sonnet-4-20250514
+
+Errors: 0
+```
+
+## Response idea
+
+In this run:
+
+* the `classify` step was handled by **Anthropic Haiku**
+* the `summarize` step was handled by **Anthropic Sonnet**
+* no fallback was needed because both responses succeeded
+
+So even though fallback policies were configured, the workflow completed on the first provider choice for each step.
+
+## Policy behavior
+
+```mermaid
+flowchart TD
+    A[classify request] --> B[RoundRobin policy]
+    B --> C[Start with next Anthropic model]
+    C --> D[Return first successful result]
+
+    E[summarize request] --> F[Failover policy]
+    F --> G[Try Anthropic]
+    G -->|fail or low quality| H[Try OpenRouter]
+    G -->|good result| I[Return result]
+    H --> I
+```
+
+## Why this sample matters
+
+Use fallback policies when you want more resilient LLM execution, for example:
+
+* spreading traffic across models
+* protecting against provider outages
+* adding backup providers
+* enforcing minimum response quality
+* keeping workflows running without changing workflow code
+
+## Key idea
+
+The workflow stays the same.
+
+Only the node parameter changes:
+
+```json
+{
+  "fallbackPolicy": "load-balanced"
+}
+```
+
+or:
+
+```json
+{
+  "fallbackPolicy": "failover-chain"
+}
+```
+
+That lets you change routing behavior without rewriting the workflow logic.

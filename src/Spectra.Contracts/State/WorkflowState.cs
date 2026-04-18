@@ -9,6 +9,14 @@ public class WorkflowState
     public string CurrentNodeId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Terminal or current status of this run. Set by the runner throughout execution
+    /// and finalized before <see cref="Execution.IWorkflowRunner.RunAsync(Workflow.WorkflowDefinition, WorkflowState?, CancellationToken)"/>
+    /// returns. Consumers can inspect this to distinguish Completed / Failed / Cancelled / Interrupted
+    /// without loading the checkpoint.
+    /// </summary>
+    public WorkflowRunStatus Status { get; set; } = WorkflowRunStatus.InProgress;
+
+    /// <summary>
     /// Initial workflow inputs provided at launch time.
     /// </summary>
     public Dictionary<string, object?> Inputs { get; set; } = [];

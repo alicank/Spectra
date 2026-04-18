@@ -1,26 +1,31 @@
+````markdown
 # ParallelFanOut
 
-Analyzes a document through two parallel branches (sentiment + entity extraction), then merges the results. Demonstrates fan-out/fan-in with the `ParallelScheduler`.
+Analyzes a document through two parallel branches, then merges the results.
+
+This sample uses `ParallelScheduler` to fan out into `sentiment` and `entities`, then fan in at `merge`.
 
 ## What it demonstrates
 
-- Fan-out: one node feeds two independent branches
-- Fan-in: a merge node with `WaitForAll: true` waits for both branches
-- `ParallelScheduler` runs independent nodes concurrently via `Task.WhenAll`
-- `ParallelBatchStartedEvent` / `ParallelBatchCompletedEvent` show batch-level execution
-- Thread-safe state access (parallel branches write to separate `Context` keys)
+- running a workflow with `ParallelScheduler`
+- fanning out into independent branches
+- merging branch results with `waitForAll: true`
+- registering custom parallel-safe step types with `AddStep(...)`
+- writing branch outputs into separate `Context` keys
 
-## The graph
+## Flow
 
-```
-                    ┌─────────────┐
-               ┌───▶│  sentiment  │───┐
-┌──────────┐   │    └─────────────┘   │  ┌──────────┐
-│  fetch   │───┤                      ├─▶│  merge   │ (WaitForAll)
-└──────────┘   │    ┌─────────────┐   │  └──────────┘
-               └───▶│  entities   │───┘
-                    └─────────────┘
-```
+```mermaid
+flowchart LR
+    A[fetch] --> B[sentiment]
+    A --> C[entities]
+
+    B --> D[merge]
+    C --> D
+
+    B -.->|waitForAll| D
+    C -.->|waitForAll| D
+````
 
 ## Run it
 
@@ -29,8 +34,23 @@ cd samples/ParallelFanOut
 dotnet run
 ```
 
-## What to look for
+## Example output
 
-Both `sentiment` and `entities` have a 500ms simulated delay. If they ran sequentially, total time would be ~1000ms. With parallel execution, the batch completes in ~500ms — check the `ParallelBatchCompletedEvent` duration to verify.
+```text
+  [analyze:fetch] Starting 'fetch' ...
+  [analyze:fetch] Completed 'fetch' → done: fetch
+  [analyze:sentiment] Starting 'sentiment' ...
+  [analyze:entities] Starting 'entities' ...
+  [analyze:entities] Completed 'entities' → [Spectra, .NET, AI]
+  [analyze:sentiment] Completed 'sentiment' → positive (confidence: 0.87)
+  [merge] Combining: sentiment=positive (confidence: 0.87), entities=[Spectra, .NET, AI]
 
-The `merge` node only appears in the next batch after both branches complete, because `waitForAll` is `true`.
+── Results ─────────────────────────────────────────────
+  Sentiment : positive (confidence: 0.87)
+  Entities  : [Spectra, .NET, AI]
+  Merged at : 2026-04-17T06:46:27.1565463+00:00
+  Errors    : 0
+```
+
+```
+```

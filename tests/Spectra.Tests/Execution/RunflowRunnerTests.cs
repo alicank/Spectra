@@ -1118,6 +1118,44 @@ public class WorkflowRunnerTests
     }
 
     // ─── no edges = single node workflow ────────────────────────────
+    
+    [Fact]
+    public async Task SetsRunStatus_ToCompleted_OnSuccess()
+    {
+        var registry = new InMemoryStepRegistry();
+        registry.Register(new LambdaStep("Noop", _ => StepResult.Success()));
+
+        var workflow = new WorkflowDefinition
+        {
+            Id = "status-ok",
+            EntryNodeId = "n",
+            Nodes = [new NodeDefinition { Id = "n", StepType = "Noop" }],
+            Edges = []
+        };
+
+        var state = await CreateRunner(registry).RunAsync(workflow);
+
+        Assert.Equal(WorkflowRunStatus.Completed, state.Status);
+    }
+
+    [Fact]
+    public async Task SetsRunStatus_ToFailed_OnStepFailure()
+    {
+        var registry = new InMemoryStepRegistry();
+        registry.Register(new LambdaStep("Bad", _ => StepResult.Fail("broke")));
+
+        var workflow = new WorkflowDefinition
+        {
+            Id = "status-fail",
+            EntryNodeId = "b",
+            Nodes = [new NodeDefinition { Id = "b", StepType = "Bad" }],
+            Edges = []
+        };
+
+        var state = await CreateRunner(registry).RunAsync(workflow);
+
+        Assert.Equal(WorkflowRunStatus.Failed, state.Status);
+    }
 
     [Fact]
     public async Task SingleNodeWorkflow_Completes()

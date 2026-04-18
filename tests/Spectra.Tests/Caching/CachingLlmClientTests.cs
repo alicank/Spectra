@@ -126,13 +126,14 @@ public class CachingLlmClientTests
     }
 
     [Fact]
-    public async Task CompleteAsync_DelegatesProviderProperties()
+    public Task CompleteAsync_DelegatesProviderProperties()
     {
         var sut = CreateSut();
 
         Assert.Equal("fake", sut.ProviderName);
         Assert.Equal("fake-model", sut.ModelId);
         Assert.True(sut.Capabilities.SupportsJsonMode);
+        return Task.CompletedTask;
     }
 
     [Fact]

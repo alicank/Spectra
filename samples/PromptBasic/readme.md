@@ -1,16 +1,22 @@
+````markdown
 # PromptBasic
 
-The simplest possible LLM-powered workflow — a single `PromptStep` that summarizes text. One provider, one node, one call.
+The smallest LLM-powered Spectra sample.
+
+This project defines a workflow in code, runs a single `prompt` node, and prints the model response.
 
 ## What it demonstrates
 
-- `PromptStep` (`stepType: "prompt"`) — single LLM completion, no tool loop
-- `AddNode("summarize", "prompt", ...)` — registering a prompt node with parameters
-- `AddAgent` + `agentId` parameter — binding a node to a provider/model/system prompt
-- Reading the LLM response from `Context.summarize.response`
-- Code-first workflow definition with `WorkflowBuilder`
+- registering OpenRouter with `AddOpenRouter(...)`
+- defining a workflow with `WorkflowBuilder`
+- configuring an agent with `AddAgent(...)`
+- running a single `prompt` node
+- passing input with `WorkflowState`
+- reading the result from `result.Context["summarize"]["response"]`
 
 ## Prerequisites
+
+Set `OPENROUTER_API_KEY` before running the sample.
 
 ```bash
 # bash
@@ -18,7 +24,7 @@ export OPENROUTER_API_KEY="your-key"
 
 # PowerShell
 $env:OPENROUTER_API_KEY="your-key"
-```
+````
 
 ## Run it
 
@@ -27,8 +33,18 @@ cd samples/PromptBasic
 dotnet run
 ```
 
-## PromptStep vs AgentStep
+## Example output
 
-This sample uses `PromptStep` (stepType `"prompt"`) — a single LLM call with no tool loop. Use it for summarization, translation, classification, or any task that doesn't need tools.
+```text
+[WorkflowStartedEvent] ...
+[StepStartedEvent] ...
+[StepCompletedEvent] ...
+[StateChangedEvent] ...
+[WorkflowCompletedEvent] ...
 
-`AgentStep` (stepType `"agent"`) adds an autonomous tool-calling loop. Use it when the LLM needs to call functions iteratively. See the `SingleAgent` sample for that pattern.
+Summary: Spectra is an open-source .NET framework for defining and orchestrating AI workflows as explicit graphs using C# or JSON. It allows users to combine code and AI steps, select providers per step, and supports advanced features like sequential/parallel/cyclic execution, checkpointing, human-in-the-loop interrupts, and multi-agent handoffs.
+Errors: 0
+```
+
+```
+```
