@@ -84,7 +84,7 @@ var host = Host.CreateDefaultBuilder(args)
             spectra.AddOpenRouter(config =>
             {
                 config.ApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")!;
-                config.DefaultModel = "openai/gpt-4o-mini";
+                config.Model = "openai/gpt-4o-mini";
             });
 
             spectra.AddConsoleEvents();
