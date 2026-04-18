@@ -354,6 +354,26 @@ public class SpectraEndpointExtensionsTests : IAsyncDisposable
         Assert.True(body.TryGetProperty("artifacts", out _));
         Assert.True(body.TryGetProperty("context", out _));
     }
+    
+    [Fact]
+    public async Task Run_Response_IncludesStatusField_AsCompletedOnSuccess()
+    {
+        using var client = CreateTestClient();
+
+        var response = await client.PostAsJsonAsync("/spectra/run", new
+        {
+            workflowId = "test-workflow"
+        });
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        // The new `status` field was added alongside `success` so clients can
+        // distinguish Completed / Failed / Cancelled / Interrupted explicitly.
+        Assert.True(body.TryGetProperty("status", out var status),
+            "response should contain a 'status' field");
+        Assert.Equal("Completed", status.GetString());
+        Assert.True(body.GetProperty("success").GetBoolean());
+    }
 
     // ── No Checkpoint Store ──────────────────────────────────────
 

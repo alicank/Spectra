@@ -1,19 +1,36 @@
 # MultiAgentSupervisor
 
-A supervisor agent coordinates two specialist workers — a researcher and a writer — to produce a complete RFP (Request for Proposal) response. The supervisor delegates tasks via the built-in `delegate_to_agent` tool and synthesizes the results.
+Coordinate specialist agents with a supervisor.
+
+This sample shows a supervisor agent delegating work to two workers:
+
+* `researcher`
+* `writer`
+
+The supervisor collects their results and returns the final RFP response.
 
 ## What it demonstrates
 
-- **Supervisor pattern** — `AsSupervisor("researcher", "writer")` configures the supervisor with named workers
-- **`DelegationPolicy.Allowed`** — the supervisor can delegate freely without approval gates
-- **`delegate_to_agent` tool** — auto-injected when `SupervisorWorkers` is non-empty; the LLM calls it to dispatch subtasks
-- **Inline agent execution** — workers run inside the supervisor's tool loop (recursive `AgentStep`), not as separate workflow nodes
-- **`AgentDelegationStartedEvent` / `AgentDelegationCompletedEvent`** — emitted for each delegation, showing worker agent, task, tokens consumed, and duration
-- **Token tracking** — the supervisor's final output includes cumulative tokens across all agents
+* the supervisor pattern with `AsSupervisor(...)`
+* delegating work to named worker agents
+* using the built-in `delegate_to_agent` tool
+* combining worker results into one final response
+* tracking total iterations and token usage
 
-## Prerequisites
+## Flow
 
-Set your OpenRouter API key:
+```mermaid
+flowchart TD
+    A[Supervisor] --> B[Researcher]
+    A --> C[Writer]
+    B --> A
+    C --> A
+    A --> D[Final proposal response]
+```
+
+## Run it
+
+Set your API key:
 
 ```bash
 # bash
@@ -23,49 +40,81 @@ export OPENROUTER_API_KEY="your-key"
 $env:OPENROUTER_API_KEY="your-key"
 ```
 
-## The flow
-
-```
-┌──────────────────┐
-│   supervisor     │
-│  (coordinator)   │
-│                  │
-│  1. delegate     │──── delegate_to_agent("researcher", task) ────┐
-│     research     │                                                │
-│                  │◄── researcher returns findings ───────────────┘
-│                  │
-│  2. delegate     │──── delegate_to_agent("writer", task) ───────┐
-│     writing      │                                                │
-│                  │◄── writer returns draft ──────────────────────┘
-│                  │
-│  3. synthesize   │
-│     final answer │
-└──────────────────┘
-```
-
-All three agents share the same provider (OpenRouter → gpt-4o-mini) but each has its own system prompt and role.
-
-## Run it
+Then run:
 
 ```bash
 cd samples/MultiAgentSupervisor
 dotnet run
 ```
 
-## What to look for
+## What happens
 
-- **`AgentDelegationStartedEvent`** — shows the supervisor dispatching to `researcher` with a task description
-- **`AgentDelegationCompletedEvent`** — shows the researcher's result summary and tokens consumed
-- **Second delegation** — the supervisor then dispatches to `writer` with the research findings
-- **Final response** — the supervisor synthesizes both outputs into an executive summary
-- **Iteration count** — typically 5 iterations: call LLM → delegate researcher → call LLM → delegate writer → call LLM (final)
-- **Token totals** — cumulative across supervisor + researcher + writer
+The workflow has one main node: `coordinate`.
 
-## Enterprise use case
+That node runs the supervisor agent, which:
 
-This pattern maps directly to real workflows: sales teams responding to RFPs, consulting firms producing deliverables, or any scenario where a coordinator breaks work into specialist subtasks. Replace the agents with domain-specific experts (legal reviewer, pricing analyst, technical architect) and the pattern scales.
+1. delegates industry research to `researcher`
+2. delegates proposal drafting to `writer`
+3. asks for a final executive summary
+4. returns the final proposal response
 
-## Next steps
+## Example output
 
-- [Agent Step](../../docs/spectra-docs/docs/llm/agent-step.md) — how the autonomous agent loop works
-- [Multi-Agent](../../docs/spectra-docs/docs/concepts/multi-agent.md) — delegation, handoff, and conversation scope
+```text
+═══ FINAL RESULT ═══
+### Final Proposal Response for Meridian Healthcare Group
+
+#### Executive Summary
+
+Meridian Healthcare Group is poised to enhance its operational efficiency and patient care through strategic improvements in healthcare technology. Our proposal outlines a comprehensive approach focused on three critical areas: HIPAA compliance, real-time analytics, and Electronic Health Record (EHR) integration.
+
+...
+
+Total LLM iterations: 3
+Tokens: 3329 input + 620 output
+
+Errors: 0
+```
+
+## Response idea
+
+For this run, the supervisor did not write the whole answer alone.
+
+It delegated work in stages:
+
+* the `researcher` returned healthcare cloud migration findings
+* the `writer` drafted the proposal content
+* the `writer` was then used again to produce a tighter executive summary
+* the supervisor returned the final combined answer
+
+So the key idea is orchestration: one agent manages the process, while specialists do the focused work.
+
+## Delegation pattern
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as Supervisor
+    participant R as Researcher
+    participant W as Writer
+
+    U->>S: RFP task
+    S->>R: Research healthcare modernization
+    R-->>S: Industry findings
+    S->>W: Draft proposal
+    W-->>S: Proposal draft
+    S->>W: Create executive summary
+    W-->>S: Summary
+    S-->>U: Final response
+```
+
+## Why this sample matters
+
+Use a supervisor when one agent should coordinate several specialists, for example:
+
+* proposal generation
+* consulting deliverables
+* research plus writing workflows
+* lead agent with domain experts
+
+This pattern keeps responsibilities clear: the supervisor manages the flow, and the workers focus on their own tasks.

@@ -1,35 +1,37 @@
 # SingleAgent
 
-An autonomous agent with two custom tools — a **calculator** and a **clock**. The agent receives a multi-part question, reasons about it, calls tools in a loop, and synthesizes a final answer.
+Run an autonomous agent that can use tools to solve a multi-step question.
+
+This sample gives the agent two custom tools:
+
+* `calculator`
+* `clock`
+
+The agent decides when to call them, uses the results, and then writes the final answer.
 
 ## What it demonstrates
 
-- **AgentStep** (`stepType: "agent"`) — the autonomous tool-calling loop
-- **Custom tools** — implementing `ITool` with `ToolDefinition` and `ToolResult`
-- **Tool registration** — `spectra.AddTool(...)` at startup
-- **Tool whitelist** — `WithParameter("tools", ...)` restricts which tools the agent sees
-- **maxIterations** — safety guard that caps the number of LLM↔tool round trips
-- **Parallel tool execution** — when the LLM returns multiple tool calls in one turn, they run concurrently
-- **Multi-step reasoning** — the agent breaks a complex question into tool calls, observes results, then answers
+* using the `agent` step
+* registering custom tools with `AddTool(...)`
+* limiting the agent to specific tools
+* letting the agent call tools across multiple iterations
+* returning a final answer plus iteration metadata
 
-## The scenario
+## Flow
 
-A dinner party planning question that requires:
+```mermaid
+flowchart LR
+    A[User question] --> B[Agent]
+    B --> C[calculator]
+    B --> D[clock]
+    C --> B
+    D --> B
+    B --> E[Final answer]
+```
 
-1. **Math** — calculate total food needed (7 people × 350g × 1.5x safety margin → kilograms)
-2. **Time check** — get the current time to advise on shopping feasibility
+## Run it
 
-The agent must call the calculator multiple times for the arithmetic chain, call the clock once, then synthesize everything into a coherent answer.
-
-## AgentStep vs PromptStep
-
-| | PromptStep | AgentStep |
-|---|---|---|
-| LLM calls | Exactly 1 | 1 to `maxIterations` |
-| Tools | None | Any registered tools |
-| Use case | Summarization, classification, translation | Research, planning, multi-step tasks |
-
-## Prerequisites
+Set your API key:
 
 ```bash
 # bash
@@ -39,29 +41,79 @@ export OPENROUTER_API_KEY="your-key"
 $env:OPENROUTER_API_KEY="your-key"
 ```
 
-## Run it
+Then run:
 
 ```bash
 cd samples/SingleAgent
 dotnet run
 ```
 
-## Expected output
+## What happens
 
-The agent will make several iterations:
+The input asks two things:
 
-1. **Iteration 1** — calls `calculator(7, 350, multiply)` and `clock()` (in parallel)
-2. **Iteration 2** — calls `calculator(2450, 1.5, multiply)` with the intermediate result
-3. **Iteration 3** — calls `calculator(3675, 1000, divide)` to convert grams → kilograms
-4. **Final** — synthesizes: "You need 3.675 kg of food. It's currently [time] — [shopping advice]."
+* how much food to buy
+* what time it is right now
 
-The exact iteration count depends on the model's reasoning — it may combine steps.
+The agent does not answer everything in one shot. It works in steps:
 
-## Key outputs
+1. calls `calculator` to compute `7 × 350`
+2. calls `clock` to get the current time
+3. calls `calculator` again to multiply by `1.5`
+4. calls `calculator` again to convert grams to kilograms
+5. writes the final response
 
-| Output | Description |
-|--------|-------------|
-| `response` | The agent's final synthesized answer |
-| `iterations` | Number of LLM↔tool round trips taken |
-| `stopReason` | `"end_turn"` (finished naturally) or `"max_iterations"` (hit the cap) |
-| `messages` | Full conversation history including all tool calls and results |
+## Example output
+
+```text
+Agent answer:
+For your dinner party of 7 people, you'll need to buy a total of **3.675 kilograms** of food.
+
+As for the time, it is currently **10:12 AM**. You still have plenty of time to go shopping today!
+
+Tool-call iterations: 4
+Stop reason: stop
+Errors: 0
+```
+
+## Response idea
+
+For this run, the agent used tools instead of doing the work itself:
+
+* `7 * 350 = 2450`
+* `2450 * 1.5 = 3675`
+* `3675 / 1000 = 3.675`
+* current time was read from the `clock` tool
+
+Then it combined those results into one final answer.
+
+## Tool loop
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Agent
+    participant Calc as Calculator
+    participant Clock as Clock
+
+    U->>A: Ask dinner + time question
+    A->>Calc: 7 × 350
+    Calc-->>A: 2450
+    A->>Clock: current time
+    Clock-->>A: 10:12 AM
+    A->>Calc: 2450 × 1.5
+    Calc-->>A: 3675
+    A->>Calc: 3675 / 1000
+    Calc-->>A: 3.675
+    A-->>U: Final answer
+```
+
+## Why this sample matters
+
+Use an agent step when the model needs to decide:
+
+* which tools to use
+* in what order to use them
+* how to combine the results into a final answer
+
+This is a good fit for assistant-style workflows that need reasoning plus tool use.

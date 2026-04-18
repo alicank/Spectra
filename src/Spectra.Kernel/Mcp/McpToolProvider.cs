@@ -114,8 +114,11 @@ public sealed class McpToolProvider : IAsyncDisposable
                 }
 
             case McpTransportType.Http:
-                throw new NotSupportedException(
-                    "Streamable-HTTP transport is not yet implemented. Use SSE or Stdio.");
+            {
+                var transport = new Extensions.Mcp.StreamableHttpMcpTransport(_config);
+                await transport.ConnectAsync(cancellationToken);
+                return transport;
+            }
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(_config.Transport));

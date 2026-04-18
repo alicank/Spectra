@@ -79,6 +79,21 @@ public abstract class CheckpointStoreTestBase<T> where T : ICheckpointStore
         Assert.Equal(5, loaded!.StepsCompleted);
         Assert.Equal(CheckpointStatus.Completed, loaded.Status);
     }
+    
+    [Fact]
+    public async Task SaveAndLoad_PreservesCancelledStatus()
+    {
+        // CheckpointStatus.Cancelled is distinct from Failed — stores must round-trip it faithfully
+        // so that consumers can tell an operator-cancelled run from a failed one.
+        var store = CreateStore();
+        var checkpoint = CreateCheckpoint(status: CheckpointStatus.Cancelled);
+
+        await store.SaveAsync(checkpoint);
+        var loaded = await store.LoadAsync(checkpoint.RunId);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(CheckpointStatus.Cancelled, loaded!.Status);
+    }
 
     [Fact]
     public async Task Delete_RemovesCheckpoint()

@@ -31,6 +31,26 @@ public class CheckpointSerializerTests
         Assert.Equal(checkpoint.Status, deserialized.Status);
         Assert.Equal(CheckpointSerializer.CurrentSchemaVersion, deserialized.SchemaVersion);
     }
+    
+    [Fact]
+    public void Roundtrip_PreservesCancelledStatus()
+    {
+        // CheckpointStatus.Cancelled was added after Completed/Failed/Interrupted/AwaitingInput.
+        // This test guards against accidental enum ordering changes breaking persisted checkpoints.
+        var checkpoint = new Checkpoint
+        {
+            RunId = "run-cancel",
+            WorkflowId = "wf-cancel",
+            State = new WorkflowState { WorkflowId = "wf-cancel" },
+            StepsCompleted = 2,
+            Status = CheckpointStatus.Cancelled
+        };
+
+        var json = CheckpointSerializer.Serialize(checkpoint);
+        var deserialized = CheckpointSerializer.Deserialize(json);
+
+        Assert.Equal(CheckpointStatus.Cancelled, deserialized.Status);
+    }
 
     [Fact]
     public void Deserialize_FutureVersion_Throws()

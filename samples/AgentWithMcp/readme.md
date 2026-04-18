@@ -1,36 +1,37 @@
 # AgentWithMcp
 
-An autonomous agent that connects to an **MCP server** (Model Context Protocol) and uses its tools to read meeting notes from disk, then answers questions about decisions, action items, and follow-ups.
+Use MCP tools inside an agent workflow just like native Spectra tools.
+
+This sample connects to the MCP filesystem server, lets the agent read meeting notes from disk, and answer questions by inspecting those files.
 
 ## What it demonstrates
 
-- **MCP integration** — `AddMcpServer(...)` launches a subprocess, handshakes via JSON-RPC, discovers tools, and registers them as native `ITool` instances
-- **Stdio transport** — the MCP server runs as a child process communicating over stdin/stdout
-- **Tool namespace** — MCP tools are registered as `mcp__<server>__<tool>` (e.g., `mcp__filesystem__read_file`), keeping them distinct from native tools
-- **AllowedTools whitelist** — only `read_file`, `list_directory`, and `get_file_info` are exposed to the agent; write tools are filtered out during discovery
-- **InheritEnvironment** — the child process inherits `PATH` so `npx` resolves correctly (set to `false` in production with explicit env vars)
-- **Transparent abstraction** — the workflow references MCP tools by name exactly like native tools; `AgentStep` doesn't know they come from an external process
-- **Parallel tool execution** — when the agent calls `read_file` on all three meeting notes, Spectra executes them concurrently
-- **Error recovery** — the agent handles access-denied errors and self-corrects the file path across iterations
+* connecting Spectra to an MCP server with `AddMcpServer(...)`
+* discovering MCP tools at host startup
+* using MCP tools inside an `agent` step
+* restricting the agent to a safe read-only tool list
+* answering questions from local files without writing custom tools
 
-## The scenario
+## Flow
 
-Three meeting notes live in a `workflows/` directory (seeded at startup):
-
-| File | Meeting |
-|------|---------|
-| `2024-11-05-product-roadmap.txt` | Q1 roadmap, API rate limiting, design system |
-| `2024-11-12-backend-sync.txt` | Redis implementation, deployment pipeline, security review |
-| `2024-11-19-sprint-retrospective.txt` | Sprint retro, process improvements, Sprint 23 goals |
-
-The default question — *"What are all the open action items across every meeting, and who owns each one?"* — forces the agent to discover files, read all three, and synthesize a cross-meeting answer grouped by owner.
+```mermaid id="3pwxe7"
+flowchart LR
+    A[Question] --> B[Agent]
+    B --> C[list_directory]
+    B --> D[read_file]
+    B --> E[get_file_info]
+    C --> B
+    D --> B
+    E --> B
+    B --> F[Final answer]
+```
 
 ## Prerequisites
 
-- **Node.js 18+** — `npx` must be on your PATH (the MCP server is fetched automatically on first run)
-- **OpenRouter API key**
+* Node.js with `npx` available
+* OpenRouter API key
 
-```bash
+```bash id="4lebtn"
 # bash
 export OPENROUTER_API_KEY="your-key"
 
@@ -40,74 +41,103 @@ $env:OPENROUTER_API_KEY="your-key"
 
 ## Run it
 
-```bash
+```bash id="j8nqcm"
 cd samples/AgentWithMcp
 dotnet run
 ```
 
-## Expected output
+## What happens
 
-The agent makes ~5 iterations:
+At startup, Spectra connects to the MCP filesystem server and registers three tools:
 
-1. **Iteration 1** — calls `list_directory(".")` → access denied (sandboxed to `workflows/`)
-2. **Iteration 2** — calls `list_directory("/workflows")` → access denied (relative path)
-3. **Iteration 3** — calls `list_directory("<full_path>/workflows")` → discovers 3 files
-4. **Iteration 4** — calls `read_file` on all 3 files **in parallel**
-5. **Iteration 5** — synthesizes the final answer: 13 action items grouped by 6 owners with due dates and source meeting references
+* `mcp__filesystem__list_directory`
+* `mcp__filesystem__read_file`
+* `mcp__filesystem__get_file_info`
 
-The exact iteration count depends on the model — some models get the path right on the first try.
+The workflow asks the agent to answer a question about meeting notes.
+To do that, the agent:
 
-## Key outputs
+1. lists the available files
+2. reads the relevant meeting note files
+3. combines the results into one response
 
-| Output | Description |
-|--------|-------------|
-| `response` | The agent's final synthesized answer |
-| `iterations` | Number of LLM↔tool round trips taken |
-| `stopReason` | `"stop"` (finished naturally) or `"max_iterations"` (hit the cap) |
-| `messages` | Full conversation history including all tool calls and results |
+## Example output
+
+```text id="oj3r4u"
+Assistant:
+## Open Action Items by Owner
+
+### Alice (PM)
+1. Update roadmap doc and share with stakeholders - due 2024-11-07
+2. Announce focus hours policy to the whole company - due 2024-11-21
+
+### Bob (Backend)
+1. Implement Redis rate limiter with in-memory fallback - due 2024-11-22
+2. Add auth middleware to POST /admin/config - due 2024-11-13 (urgent)
+3. Run load tests on in-memory fallback - due 2024-11-20
+4. Set up rate limiter alerting in Grafana - due 2024-11-29
+
+### Carol (Design)
+1. Share component library migration guide with the team - due 2024-11-08
+2. Complete dashboard design migration - due 2024-11-29
+
+### David (QA)
+1. Draft QA checklist for design system migration - due 2024-11-15
+2. Write search rewrite scoping document - due 2024-11-29
+
+### Eve (DevOps)
+1. Provision Redis in production environment - due 2024-11-15
+
+### Frank (Security)
+1. Re-verify POST /admin/config after Bob's fix - due 2024-11-14
+2. Draft security checklist for PR template - due 2024-11-22 (async)
+
+Tool-call iterations: 5
+Stop reason: stop
+Errors: 0
+```
+
+## Response idea
+
+For the default question, the agent first discovers which meeting files exist, then reads all three files, then groups the action items by owner.
+
+So the important part is not just the final answer. It is that the agent used external MCP tools to find and read the source material before answering.
+
+## MCP tool loop
+
+```mermaid id="s9z1px"
+sequenceDiagram
+    participant U as User
+    participant A as Agent
+    participant MCP as MCP Filesystem Server
+
+    U->>A: Ask about meeting notes
+    A->>MCP: list_directory
+    MCP-->>A: file list
+    A->>MCP: read_file
+    A->>MCP: read_file
+    A->>MCP: read_file
+    MCP-->>A: meeting note contents
+    A-->>U: final answer
+```
+
+## Why this sample matters
+
+Use MCP when tools live outside your app and you want the agent to access them through a standard protocol, for example:
+
+* files
+* databases
+* developer tools
+* internal systems
+* third-party integrations
+
+This lets the workflow use external tools without changing how the agent step works.
 
 ## Try other questions
 
-Uncomment any of these in `Program.cs`:
-
-```csharp
-"What was decided about the API rate limiting?"
-"Summarise the product roadmap meeting in one paragraph."
-"Which meetings did Alice attend?"
-"List every decision made in November 2024."
-```
-
-## MCP vs native tools
-
-The workflow code is identical to the [SingleAgent](../SingleAgent/) sample — the only difference is *where the tools come from*:
-
-| | SingleAgent | AgentWithMcp |
-|---|---|---|
-| Tool source | `spectra.AddTool(...)` | `spectra.AddMcpServer(...)` |
-| Registration | At build time | At host startup (async discovery) |
-| Tool names | `calculator`, `clock` | `mcp__filesystem__read_file` |
-| Requires | Nothing | Node.js (`npx`) |
-| Workflow code | Identical | Identical |
-
-## Architecture
-
-```
-Program.cs
-    │
-    ├─ AddMcpServer(McpServerConfig)
-    │      │
-    │      ▼
-    │  SpectraHostedService.StartAsync()
-    │      │
-    │      ├─ StdioMcpTransport.StartAsync()     ← spawns: npx -y @modelcontextprotocol/server-filesystem
-    │      ├─ McpClient.InitializeAsync()         ← JSON-RPC: initialize → tools/list
-    │      ├─ McpToolProvider filters tools        ← AllowedTools whitelist applied
-    │      └─ McpToolAdapter registered as ITool   ← mcp__filesystem__read_file etc.
-    │
-    ├─ WorkflowBuilder.Create("meeting-assistant")
-    │      └─ .WithParameter("tools", ["mcp__filesystem__read_file", ...])
-    │
-    └─ runner.RunAsync(workflow, state)
-           └─ AgentStep resolves tools from IToolRegistry
-                  └─ MCP tools are indistinguishable from native tools
+```text id="7dqarf"
+What was decided about the API rate limiting?
+Summarise the product roadmap meeting in one paragraph.
+Which meetings did Alice attend?
+List every decision made in November 2024.
 ```

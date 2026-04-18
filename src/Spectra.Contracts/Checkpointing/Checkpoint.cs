@@ -51,5 +51,13 @@ public enum CheckpointStatus
     Completed,
     Failed,
     Interrupted,
-    AwaitingInput
+    AwaitingInput,
+
+    /// <summary>
+    /// The run was cleanly cancelled by an operator — typically via an
+    /// <see cref="Interrupts.InterruptStatus.Cancelled"/> response to a pending interrupt.
+    /// Distinct from <see cref="Failed"/>: cancellation is an intentional stop,
+    /// not an error condition.
+    /// </summary>
+    Cancelled
 }

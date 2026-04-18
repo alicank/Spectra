@@ -87,26 +87,15 @@ public class WorkflowRunner : IWorkflowRunner
             : streamingSink;
 
         var streamingRunner = new WorkflowRunner(
-            _registry,
-            _stateMapper,
-            _conditionEvaluator,
-            compositeSink,
-            _checkpointStore,
-            _checkpointOptions,
-            _agentRegistry,
-            _providerRegistry,
-            _interruptHandler,
-            _services,
-            _memoryStore);
+            _registry, _stateMapper, _conditionEvaluator, compositeSink,
+            _checkpointStore, _checkpointOptions, _agentRegistry, _providerRegistry,
+            _interruptHandler, _services, _memoryStore);
 
         streamingRunner._streamingChannel = channel;
 
         var runTask = Task.Run(async () =>
         {
-            try
-            {
-                await streamingRunner.RunAsync(workflow, initialState, cancellationToken);
-            }
+            try { await streamingRunner.RunAsync(workflow, initialState, cancellationToken); }
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
@@ -119,10 +108,7 @@ public class WorkflowRunner : IWorkflowRunner
                     Errors = [ex.Message]
                 }, CancellationToken.None);
             }
-            finally
-            {
-                streamingSink.Complete();
-            }
+            finally { streamingSink.Complete(); }
         }, cancellationToken);
 
         await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken))
@@ -164,12 +150,14 @@ public class WorkflowRunner : IWorkflowRunner
     {
         var state = initialState ?? new WorkflowState();
         state.WorkflowId = workflow.Id;
+        state.Status = WorkflowRunStatus.InProgress;
 
         // ── Pre-run structural validation ──
         var validation = WorkflowValidator.Validate(workflow);
         if (!validation.IsValid)
         {
             state.Errors.AddRange(validation.Errors);
+            state.Status = WorkflowRunStatus.Failed;
 
             await EmitAsync(new WorkflowCompletedEvent
             {
@@ -183,7 +171,6 @@ public class WorkflowRunner : IWorkflowRunner
             return state;
         }
 
-        // Surface warnings via events (non-blocking)
         foreach (var warning in validation.Warnings)
         {
             await EmitAsync(new WorkflowStartedEvent
@@ -195,6 +182,7 @@ public class WorkflowRunner : IWorkflowRunner
                 TotalNodes = workflow.Nodes.Count
             }, CancellationToken.None);
         }
+
         using var workflowActivity = SpectraActivitySource.StartWorkflow(
             workflow.Id, state.RunId, workflow.Name);
 
@@ -214,6 +202,7 @@ public class WorkflowRunner : IWorkflowRunner
                 state = existingCheckpoint.State;
                 currentNodeId = existingCheckpoint.NextNodeId;
                 stepsExecuted = existingCheckpoint.StepsCompleted;
+                state.Status = WorkflowRunStatus.InProgress; // resuming
 
                 await EmitAsync(new WorkflowResumedEvent
                 {
@@ -295,13 +284,11 @@ public class WorkflowRunner : IWorkflowRunner
                 break;
             }
 
-            // Resolve inputs
             var inputs = _stateMapper.ResolveInputs(node, state);
 
             if (!string.IsNullOrEmpty(node.AgentId) && !inputs.ContainsKey("agentId"))
                 inputs["agentId"] = node.AgentId;
 
-            // Inject UserPromptRef from node definition if not already in inputs
             if (!string.IsNullOrEmpty(node.UserPromptRef)
                 && !inputs.ContainsKey("userPromptRef")
                 && !inputs.ContainsKey("userPrompt"))
@@ -309,7 +296,6 @@ public class WorkflowRunner : IWorkflowRunner
                 inputs["userPromptRef"] = node.UserPromptRef;
             }
 
-            // Inject pending user message for session steps
             if (state.Context.TryGetValue("__pendingUserMessage", out var pendingMsg)
                 && pendingMsg is string pendingUserMessage
                 && !string.IsNullOrEmpty(pendingUserMessage))
@@ -318,7 +304,6 @@ public class WorkflowRunner : IWorkflowRunner
                 state.Context.Remove("__pendingUserMessage");
             }
 
-            // Subgraph wiring: inject ID and auto-wire output mappings from SubgraphDefinition
             if (!string.IsNullOrEmpty(node.SubgraphId))
             {
                 if (!inputs.ContainsKey("__subgraphId"))
@@ -343,7 +328,6 @@ public class WorkflowRunner : IWorkflowRunner
                 }
             }
 
-            // Inject pending handoff context (from a previous agent's handoff)
             if (state.Context.TryGetValue("__pendingHandoff", out var handoffObj)
                 && handoffObj is Contracts.Workflow.AgentHandoff pendingHandoff
                 && node.AgentId is not null
@@ -382,7 +366,7 @@ public class WorkflowRunner : IWorkflowRunner
                 Inputs = inputs
             }, cancellationToken);
 
-            // Declarative interrupt: pause BEFORE step execution
+            // ── Declarative interrupt: BEFORE step execution ──
             if (!string.IsNullOrEmpty(node.InterruptBefore))
             {
                 var interruptRequest = new InterruptRequest
@@ -395,7 +379,32 @@ public class WorkflowRunner : IWorkflowRunner
                 };
 
                 var resolved = await TryResolveInterruptAsync(interruptRequest, cancellationToken);
-                if (resolved == null)
+                var outcome = ResolveInterruptOutcome(resolved);
+
+                if (outcome.Terminal is { } terminalStatus)
+                {
+                    if (outcome.ErrorMessage is not null)
+                        state.Errors.Add(outcome.ErrorMessage);
+
+                    await EmitAsync(new StepInterruptedEvent
+                    {
+                        RunId = state.RunId,
+                        WorkflowId = workflow.Id,
+                        NodeId = node.Id,
+                        EventType = nameof(StepInterruptedEvent),
+                        StepType = node.StepType,
+                        Reason = outcome.EventReason ?? node.InterruptBefore,
+                        IsDeclarative = true
+                    }, cancellationToken);
+
+                    finalStatus = terminalStatus;
+                    await SaveCheckpointAsync(
+                        workflow, state, null, node.Id,
+                        stepsExecuted, finalStatus, cancellationToken);
+                    break;
+                }
+
+                if (!outcome.Proceed)
                 {
                     await EmitAsync(new StepInterruptedEvent
                     {
@@ -420,7 +429,6 @@ public class WorkflowRunner : IWorkflowRunner
                 }
             }
 
-            // Build step context
             var tokenIndex = 0;
             var context = new StepContext
             {
@@ -454,7 +462,6 @@ public class WorkflowRunner : IWorkflowRunner
                 : null
             };
 
-            // Execute step
             var stepStopwatch = Stopwatch.StartNew();
             using var stepActivity = SpectraActivitySource.StartStep(
                 workflow.Id, state.RunId, node.Id, node.StepType);
@@ -576,7 +583,7 @@ public class WorkflowRunner : IWorkflowRunner
                 break;
             }
 
-            // Handle agent handoff
+            // ── Handoff ──
             if (result.Status == StepStatus.Handoff && result.Handoff is not null)
             {
                 var handoff = result.Handoff;
@@ -613,7 +620,32 @@ public class WorkflowRunner : IWorkflowRunner
                     };
 
                     var resolved = await TryResolveInterruptAsync(interruptRequest, cancellationToken);
-                    if (resolved is null)
+                    var outcome = ResolveInterruptOutcome(resolved);
+
+                    if (outcome.Terminal is { } handoffTerminalStatus)
+                    {
+                        if (outcome.ErrorMessage is not null)
+                            state.Errors.Add(outcome.ErrorMessage);
+
+                        await EmitAsync(new StepInterruptedEvent
+                        {
+                            RunId = state.RunId,
+                            WorkflowId = workflow.Id,
+                            NodeId = node.Id,
+                            EventType = nameof(StepInterruptedEvent),
+                            StepType = node.StepType,
+                            Reason = outcome.EventReason ?? interruptRequest.Reason,
+                            IsDeclarative = false
+                        }, cancellationToken);
+
+                        finalStatus = handoffTerminalStatus;
+                        await SaveCheckpointAsync(
+                            workflow, state, node.Id, null,
+                            stepsExecuted, finalStatus, cancellationToken);
+                        break;
+                    }
+
+                    if (!outcome.Proceed)
                     {
                         await EmitAsync(new StepInterruptedEvent
                         {
@@ -649,7 +681,7 @@ public class WorkflowRunner : IWorkflowRunner
                 continue;
             }
 
-            // Declarative interrupt: pause AFTER step execution
+            // ── Declarative interrupt: AFTER step execution ──
             if (!string.IsNullOrEmpty(node.InterruptAfter))
             {
                 var interruptRequest = new InterruptRequest
@@ -662,7 +694,35 @@ public class WorkflowRunner : IWorkflowRunner
                 };
 
                 var resolved = await TryResolveInterruptAsync(interruptRequest, cancellationToken);
-                if (resolved == null)
+                var outcome = ResolveInterruptOutcome(resolved);
+
+                if (outcome.Terminal is { } afterTerminalStatus)
+                {
+                    await ApplyOutputsWithEvents(
+                        workflow, node, state, result.Outputs, cancellationToken);
+
+                    if (outcome.ErrorMessage is not null)
+                        state.Errors.Add(outcome.ErrorMessage);
+
+                    await EmitAsync(new StepInterruptedEvent
+                    {
+                        RunId = state.RunId,
+                        WorkflowId = workflow.Id,
+                        NodeId = node.Id,
+                        EventType = nameof(StepInterruptedEvent),
+                        StepType = node.StepType,
+                        Reason = outcome.EventReason ?? node.InterruptAfter,
+                        IsDeclarative = true
+                    }, cancellationToken);
+
+                    finalStatus = afterTerminalStatus;
+                    await SaveCheckpointAsync(
+                        workflow, state, node.Id, null,
+                        stepsExecuted, finalStatus, cancellationToken);
+                    break;
+                }
+
+                if (!outcome.Proceed)
                 {
                     await ApplyOutputsWithEvents(
                         workflow, node, state, result.Outputs, cancellationToken);
@@ -693,11 +753,9 @@ public class WorkflowRunner : IWorkflowRunner
                 }
             }
 
-            // Apply outputs to state
             await ApplyOutputsWithEvents(
                 workflow, node, state, result.Outputs, cancellationToken);
 
-            // Resolve next node
             var nextNodeId = ResolveNextNode(
                 workflow, node.Id, state, cancellationToken);
 
@@ -716,34 +774,101 @@ public class WorkflowRunner : IWorkflowRunner
 
         workflowActivity?.SetTag(SpectraTags.StepsExecuted, stepsExecuted);
         if (state.Errors.Count > 0)
-        {
-            workflowActivity?.SetStatus(ActivityStatusCode.Error,
-                string.Join("; ", state.Errors));
-        }
+            workflowActivity?.SetStatus(ActivityStatusCode.Error, string.Join("; ", state.Errors));
         else
-        {
             workflowActivity?.SetStatus(ActivityStatusCode.Ok);
-        }
 
-        if (finalStatus is CheckpointStatus.Completed or CheckpointStatus.Failed)
+        if (finalStatus is CheckpointStatus.Completed or CheckpointStatus.Failed or CheckpointStatus.Cancelled)
         {
             await SaveCheckpointAsync(
                 workflow, state, state.CurrentNodeId, null,
                 stepsExecuted, finalStatus, cancellationToken);
         }
 
+        // Single finalization point — covers every break path above.
+        state.Status = ToRunStatus(finalStatus);
+
         await EmitAsync(new WorkflowCompletedEvent
         {
             RunId = state.RunId,
             WorkflowId = workflow.Id,
             EventType = nameof(WorkflowCompletedEvent),
-            Success = state.Errors.Count == 0,
+            Success = state.Status == WorkflowRunStatus.Completed,
             Duration = workflowStopwatch.Elapsed,
             StepsExecuted = stepsExecuted,
             Errors = state.Errors.ToList()
         }, cancellationToken);
 
         return state;
+    }
+
+    /// <summary>
+    /// Converts the internal <see cref="CheckpointStatus"/> used by the run loop
+    /// into the public <see cref="WorkflowRunStatus"/> surfaced on <see cref="WorkflowState"/>.
+    /// </summary>
+    private static WorkflowRunStatus ToRunStatus(CheckpointStatus status) => status switch
+    {
+        CheckpointStatus.InProgress => WorkflowRunStatus.InProgress,
+        CheckpointStatus.Completed => WorkflowRunStatus.Completed,
+        CheckpointStatus.Failed => WorkflowRunStatus.Failed,
+        CheckpointStatus.Interrupted => WorkflowRunStatus.Interrupted,
+        CheckpointStatus.AwaitingInput => WorkflowRunStatus.AwaitingInput,
+        CheckpointStatus.Cancelled => WorkflowRunStatus.Cancelled,
+        _ => WorkflowRunStatus.InProgress
+    };
+
+    /// <summary>
+    /// Maps an <see cref="InterruptResponse"/> (or its absence) to a runner-level decision.
+    /// </summary>
+    private static InterruptOutcome ResolveInterruptOutcome(InterruptResponse? response)
+    {
+        if (response is null)
+            return InterruptOutcome.Park;
+
+        return response.Status switch
+        {
+            InterruptStatus.Approved => InterruptOutcome.ProceedResult,
+
+            InterruptStatus.Rejected => new InterruptOutcome(
+                Proceed: false,
+                Terminal: CheckpointStatus.Failed,
+                ErrorMessage: BuildInterruptError("rejected", response),
+                EventReason: "Interrupt rejected"),
+
+            InterruptStatus.TimedOut => new InterruptOutcome(
+                Proceed: false,
+                Terminal: CheckpointStatus.Failed,
+                ErrorMessage: BuildInterruptError("timed out", response),
+                EventReason: "Interrupt timed out"),
+
+            InterruptStatus.Cancelled => new InterruptOutcome(
+                Proceed: false,
+                Terminal: CheckpointStatus.Cancelled,
+                ErrorMessage: null,
+                EventReason: "Interrupt cancelled"),
+
+            _ => InterruptOutcome.Park
+        };
+    }
+
+    private static string BuildInterruptError(string verb, InterruptResponse response)
+    {
+        var parts = new List<string> { $"Interrupt {verb}" };
+        if (!string.IsNullOrWhiteSpace(response.RespondedBy))
+            parts.Add($"by {response.RespondedBy}");
+        if (!string.IsNullOrWhiteSpace(response.Comment))
+            parts.Add($"({response.Comment})");
+        return string.Join(" ", parts);
+    }
+
+    private readonly record struct InterruptOutcome(
+        bool Proceed,
+        CheckpointStatus? Terminal,
+        string? ErrorMessage,
+        string? EventReason)
+    {
+        public static readonly InterruptOutcome Park = new(false, null, null, null);
+        public static readonly InterruptOutcome ProceedResult = new(true, null, null, null);
     }
 
     private string? ResolveNextNode(
@@ -812,6 +937,9 @@ public class WorkflowRunner : IWorkflowRunner
         if (checkpoint.Status == CheckpointStatus.Completed)
             throw new InvalidOperationException($"Run {runId} has already completed and cannot be resumed.");
 
+        if (checkpoint.Status == CheckpointStatus.Cancelled)
+            throw new InvalidOperationException($"Run {runId} was cancelled and cannot be resumed.");
+
         var state = checkpoint.State;
         state.RunId = runId;
 
@@ -868,9 +996,7 @@ public class WorkflowRunner : IWorkflowRunner
         }
 
         if (_interruptHandler != null)
-        {
             return Task.FromResult<InterruptResponse?>(null);
-        }
 
         return Task.FromResult<InterruptResponse?>(null);
     }
@@ -930,10 +1056,6 @@ public class WorkflowRunner : IWorkflowRunner
         return await RunAsync(workflow, state, cancellationToken);
     }
 
-    /// <summary>
-    /// Sends a user message to a session node that is currently awaiting input.
-    /// Loads the checkpoint, injects the message, and resumes execution at the session node.
-    /// </summary>
     public async Task<WorkflowState> SendMessageAsync(
         WorkflowDefinition workflow,
         string runId,
@@ -952,8 +1074,6 @@ public class WorkflowRunner : IWorkflowRunner
 
         var state = checkpoint.State;
         state.RunId = runId;
-
-        // Inject the user message so the session step can pick it up
         state.Context["__pendingUserMessage"] = userMessage;
 
         if (checkpoint.NextNodeId != null)
@@ -1001,7 +1121,7 @@ public class WorkflowRunner : IWorkflowRunner
         {
             CheckpointFrequency.EveryNode => true,
             CheckpointFrequency.StatusChangeOnly =>
-                finalStatus is CheckpointStatus.Completed or CheckpointStatus.Failed,
+                finalStatus is CheckpointStatus.Completed or CheckpointStatus.Failed or CheckpointStatus.Cancelled,
             CheckpointFrequency.Disabled => false,
             _ => true
         };
@@ -1063,7 +1183,6 @@ public class WorkflowRunner : IWorkflowRunner
 
     private async Task EmitAsync(WorkflowEvent evt, CancellationToken cancellationToken)
     {
-        // Stamp identity context onto every emitted event
         evt = evt with
         {
             TenantId = evt.TenantId ?? _runContext.TenantId,

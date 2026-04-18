@@ -1,57 +1,83 @@
 # StructuredOutput
 
-Extracts structured contact information from unstructured text using `StructuredOutputStep` with a JSON schema. The schema guides the LLM via the prompt, and validation happens client-side (Pydantic-style) — no provider-specific structured output API required.
+Extract structured data from plain text with `StructuredOutputStep`.
+
+This sample takes a block of text, asks the model to return contact details in a specific JSON shape, and stores the parsed result in workflow context.
 
 ## What it demonstrates
 
-- `StructuredOutputStep` (`stepType: "structured_output"`) — LLM completion with client-side JSON parsing
-- `jsonSchema` parameter — injected into the prompt as guidance, not pushed to the provider API
-- Flat dictionary outputs — extracted fields are directly accessible (no `parsedResponse` wrapper)
-- `ExtractJson` — handles LLM responses wrapped in markdown code blocks
-- `NormalizeJsonElement` — converts `JsonElement` to plain CLR types (no leaks to downstream steps)
-- `AddAnthropic` — uses Claude as the LLM provider
+* using the `structured_output` step
+* passing a JSON schema to describe the expected shape
+* extracting fields like name, company, email, phone, and role
+* reading structured values from `result.Context["extract"]`
 
-## Prerequisites
+## Flow
 
-```bash
-# bash
-export ANTHROPIC_API_KEY="your-key"
-
-# PowerShell
-$env:ANTHROPIC_API_KEY="your-key"
+```mermaid
+flowchart LR
+    A[Input text] --> B[extract]
+    B --> C[Structured contact object]
 ```
 
 ## Run it
+
+Set your API key:
+
+```bash
+# bash
+export OPENROUTER_API_KEY="your-key"
+
+# PowerShell
+$env:OPENROUTER_API_KEY="your-key"
+```
+
+Then run:
 
 ```bash
 cd samples/StructuredOutput
 dotnet run
 ```
 
-## Expected output
+## Example output
 
-```
+```text
+[WorkflowStartedEvent] Extract Contact Info
+[StepStartedEvent] Node=extract StepType=structured_output
+[StepCompletedEvent] Node=extract Status=Succeeded
+[WorkflowCompletedEvent] Success=true StepsExecuted=1
+
 Extracted contact:
-  name      : Marie Dupont
-  company   : Electrosoft Tech Company
-  email     : marie.dupont@electrosoft
-  phone     : +33 4 78 00 12 34
-  role      : Technical Director
+  name      : Jordan Patel
+  company   : NovaByte Systems
+  email     : jordan.patel@novabyte.io
+  phone     : +1 512 340 8821
+  role      : Senior Engineering Manager
+
+Errors: 0
 ```
 
-## How it works
+## Response shape
 
-Unlike provider-level structured output (which varies by provider and model), Spectra's `StructuredOutputStep` takes a Pydantic-style approach:
+The `structured_output` step returns a plain object that matches the schema you provide.
 
-1. Sets `outputMode: "json"` — universally supported across all providers
-2. Injects the schema into the system prompt so the LLM knows the expected shape
-3. Extracts JSON from the response (handles ```` ```json ``` ```` wrapping)
-4. Parses and normalizes to plain CLR types — downstream steps get `Dictionary<string, object?>`, not `JsonElement`
+For this sample, the result looks like:
 
-This means it works with **any provider** — Anthropic, OpenRouter, OpenAI, Ollama, Gemini — without requiring model-specific structured output support.
+```json
+{
+  "name": "Jordan Patel",
+  "company": "NovaByte Systems",
+  "email": "jordan.patel@novabyte.io",
+  "phone": "+1 512 340 8821",
+  "role": "Senior Engineering Manager"
+}
+```
 
-## When to use StructuredOutputStep
+That object is stored under the node id:
 
-Use it when you need the LLM response as typed data — entity extraction, classification, form filling, or any task where downstream code consumes the output programmatically.
+```csharp
+result.Context["extract"]
+```
 
-For free-text responses, use `PromptStep` instead (see the `PromptBasic` sample).
+## Why this sample is useful
+
+Use `StructuredOutputStep` when you want the model to return data your code can read directly, instead of free-form text. It is a good fit for tasks like extraction, classification, and form-style outputs.

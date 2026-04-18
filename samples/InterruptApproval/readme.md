@@ -1,35 +1,26 @@
 # InterruptApproval
 
-A content publishing pipeline that pauses for human review before publishing. Demonstrates declarative interrupts with `InterruptBefore`, checkpoint-on-interrupt, and `ResumeWithResponseAsync`.
+Pause a workflow for human approval before a step runs.
+
+This sample generates draft content, stops before publishing, saves an interrupt checkpoint, then resumes after an approval response.
 
 ## What it demonstrates
 
-- Declarative `interruptBefore` on a node — pauses execution without any step code
-- `CheckpointStatus.Interrupted` — the checkpoint stores the pending `InterruptRequest`
-- `ResumeWithResponseAsync` — resumes with an `InterruptResponse` (approved/rejected)
-- `InterruptResponse.ApprovedResponse()` — factory method with respondedBy and comment
-- `StepInterruptedEvent` in the console showing the pause reason
+* declarative interrupts with `interruptBefore`
+* checkpointing interrupted runs to disk
+* inspecting a pending interrupt from the checkpoint store
+* resuming with `ResumeWithResponseAsync(...)`
+* approving a paused step before it executes
 
-## The graph
+## Flow
 
+```mermaid
+flowchart LR
+    A[draft] --> B[publish]
+    B -->|interruptBefore| C[Paused for approval]
+    C --> D[Approved]
+    D --> B
 ```
-┌──────────┐     ┌──────────────────────────┐
-│  draft   │────▶│  publish                 │
-└──────────┘     │  (interruptBefore: ...)   │
-                 │                          │
-                 │  ⏸ PAUSES HERE           │
-                 │  waits for approval       │
-                 │  then executes            │
-                 └──────────────────────────┘
-```
-
-## What happens
-
-1. **Run 1** — `draft` generates content. The runner reaches `publish` but sees `interruptBefore`. It checkpoints with status `Interrupted` and stops. The `publish` step never executes.
-
-2. **Checkpoint inspection** — the program reads the checkpoint and prints the `PendingInterrupt` with its reason and title.
-
-3. **Run 2** — calls `ResumeWithResponseAsync` with an approved response. The runner loads the interrupted checkpoint, sees the approval, skips the interrupt, and executes `publish`.
 
 ## Run it
 
@@ -38,9 +29,85 @@ cd samples/InterruptApproval
 dotnet run
 ```
 
-## What to look for
+## What happens
 
-- Run 1: `draft` runs but `publish` does NOT — the `StepInterruptedEvent` shows the pause
-- Checkpoint status is `Interrupted` with a `PendingInterrupt` containing the reason
-- Run 2: `publish` runs immediately after the interrupt is cleared by the approval
-- The approval's `respondedBy` and `comment` are passed through the `InterruptResponse`
+The workflow has two nodes:
+
+* `draft` creates the content
+* `publish` is marked with `interruptBefore`
+
+On the first run:
+
+* `draft` runs normally
+* execution reaches `publish`
+* Spectra pauses before the step executes
+* a checkpoint is saved with interrupt details
+
+Then the sample:
+
+* loads the checkpoint
+* prints the pending interrupt
+* sends an approval response
+* resumes the same run
+
+After approval, `publish` runs and the workflow finishes.
+
+## Example output
+
+```text
+═══ RUN 1: Content pipeline - will pause for review ═══
+
+  [draft] Generated draft for "Spectra v1.0 Release Notes" by Alican
+  [draft] Content: 109 chars
+
+Run 1 paused. RunId: 3f5c07bb-a378-43c0-a78e-02f7ef3f2e29
+Errors: 0
+
+═══ CHECKPOINT: Waiting for approval ═══
+
+  Status           : Interrupted
+  Next node        : publish
+  Steps done       : 1
+  Pending interrupt: yes
+  Reason           : Content must be reviewed and approved before publishing
+  Title            : Interrupt before 'publish'
+
+═══ RUN 2: Approving and resuming ═══
+
+  [publish] Publishing "Spectra v1.0 Release Notes" - approved and live!
+
+Run 2 completed. Errors: 0
+```
+
+## Response idea
+
+After the first run, the workflow is not failed and not completed.
+
+It is:
+
+* checkpointed with status `Interrupted`
+* waiting at the `publish` node
+* holding a pending interrupt request with the review reason
+
+Once an approval response is passed to `ResumeWithResponseAsync(...)`, the interrupt is cleared and the workflow continues.
+
+## Workflow shape
+
+```mermaid
+flowchart TD
+    A[Input: topic + author] --> B[draft]
+    B --> C[publish]
+    C --> D[Published output]
+```
+
+## Why this sample matters
+
+Use interrupts when a workflow must stop for a decision before continuing, for example:
+
+* content approval
+* legal review
+* manager sign-off
+* manual verification
+* deployment approval
+
+The step does not need to implement pause logic itself. The workflow definition controls it with `interruptBefore`.

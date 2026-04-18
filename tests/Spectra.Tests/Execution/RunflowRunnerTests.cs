@@ -494,7 +494,7 @@ public class WorkflowRunnerTests
     // ─── infinite loop detection ────────────────────────────────────
 
     [Fact]
-    public async Task DetectsInfiniteLoop()
+    public async Task DetectsCycleAtValidation()
     {
         var callCount = 0;
         var registry = new InMemoryStepRegistry();
@@ -523,7 +523,7 @@ public class WorkflowRunnerTests
         var state = await CreateRunner(registry).RunAsync(workflow);
 
         Assert.NotEmpty(state.Errors);
-        Assert.Contains(state.Errors, e => e.Contains("Infinite loop"));
+        Assert.Contains(state.Errors, e => e.Contains("cycle"));
     }
 
     // ─── loopback / cycle support ─────────────────────────────────
@@ -1007,6 +1007,15 @@ public class WorkflowRunnerTests
         {
             Id = "agent-test",
             EntryNodeId = "a",
+            Agents =
+            [
+                new AgentDefinition
+                {
+                    Id = "claude-3",
+                    Provider = "anthropic",
+                    Model = "claude-3"
+                }
+            ],
             Nodes =
             [
                 new NodeDefinition { Id = "a", StepType = "AgentStep", AgentId = "claude-3" }
@@ -1109,6 +1118,44 @@ public class WorkflowRunnerTests
     }
 
     // ─── no edges = single node workflow ────────────────────────────
+    
+    [Fact]
+    public async Task SetsRunStatus_ToCompleted_OnSuccess()
+    {
+        var registry = new InMemoryStepRegistry();
+        registry.Register(new LambdaStep("Noop", _ => StepResult.Success()));
+
+        var workflow = new WorkflowDefinition
+        {
+            Id = "status-ok",
+            EntryNodeId = "n",
+            Nodes = [new NodeDefinition { Id = "n", StepType = "Noop" }],
+            Edges = []
+        };
+
+        var state = await CreateRunner(registry).RunAsync(workflow);
+
+        Assert.Equal(WorkflowRunStatus.Completed, state.Status);
+    }
+
+    [Fact]
+    public async Task SetsRunStatus_ToFailed_OnStepFailure()
+    {
+        var registry = new InMemoryStepRegistry();
+        registry.Register(new LambdaStep("Bad", _ => StepResult.Fail("broke")));
+
+        var workflow = new WorkflowDefinition
+        {
+            Id = "status-fail",
+            EntryNodeId = "b",
+            Nodes = [new NodeDefinition { Id = "b", StepType = "Bad" }],
+            Edges = []
+        };
+
+        var state = await CreateRunner(registry).RunAsync(workflow);
+
+        Assert.Equal(WorkflowRunStatus.Failed, state.Status);
+    }
 
     [Fact]
     public async Task SingleNodeWorkflow_Completes()

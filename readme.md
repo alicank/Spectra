@@ -17,8 +17,8 @@
 </p>
 
 <p align="center">
-  <a href="https://specticai.com/spectra/">Documentation</a> ·
-  <a href="https://specticai.com/spectra/getting-started/">Getting Started</a> ·
+  <a href="https://alicank.github.io/Spectra/">Documentation</a> ·
+  <a href="https://alicank.github.io/Spectra/getting-started/">Getting Started</a> ·
   <a href="#samples">Samples</a> ·
   <a href="https://www.nuget.org/packages/Spectra">NuGet</a>
 </p>
@@ -42,7 +42,7 @@ var host = Host.CreateDefaultBuilder(args)
             spectra.AddOpenRouter(c =>
             {
                 c.ApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")!;
-                c.DefaultModel = "openai/gpt-4o-mini";
+                c.Model = "openai/gpt-4o-mini";
             });
             spectra.AddConsoleEvents();
         });

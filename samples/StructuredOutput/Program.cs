@@ -55,9 +55,10 @@ var runner = host.Services.GetRequiredService<IWorkflowRunner>();
 
 var state = new WorkflowState();
 state.Inputs["text"] = """
-    Hi, I'm Marie Dupont from Acme Insurance. You can reach me at 
-    marie.dupont@acme-insurance.fr or call +33 4 78 00 12 34. 
-    I'm the Claims Director and I'd love to discuss the new platform.
+    Hey, I'm Jordan Patel, Senior Engineering Manager at NovaByte Systems in Austin, TX.
+    Feel free to ping me at jordan.patel@novabyte.io or on my direct line +1 512 340 8821.
+    We're scaling our distributed systems team and I think your platform could really 
+    streamline our hiring pipeline — happy to jump on a call this week.
     """;
 
 var result = await runner.RunAsync(workflow, state);
