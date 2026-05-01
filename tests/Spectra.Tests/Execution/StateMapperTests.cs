@@ -1,4 +1,4 @@
-﻿using Spectra.Contracts.State;
+using Spectra.Contracts.State;
 using Spectra.Contracts.Workflow;
 using Spectra.Kernel.Execution;
 using Xunit;
@@ -356,5 +356,105 @@ public class StateMapperTests
         Assert.Equal(2, items.Count);
         Assert.Equal("a", items[0]);
         Assert.Equal("b", items[1]);
+    }
+
+    // ── Nodes namespace tests ──
+
+    [Fact]
+    public void GetValueFromPath_Nodes_ResolvesNodeOutputField()
+    {
+        // Arrange
+        var state = new WorkflowState
+        {
+            Nodes = new()
+            {
+                ["flat-render"] = new Dictionary<string, object?>
+                {
+                    ["tree"] = "rendered-tree-value"
+                }
+            }
+        };
+
+        // Act
+        var value = StateMapper.GetValueFromPath(state, "nodes.flat-render.tree");
+
+        // Assert
+        Assert.Equal("rendered-tree-value", value);
+    }
+
+    [Fact]
+    public void ResolveInputs_NodesTemplate_ResolvesFromNodesState()
+    {
+        // Arrange
+        var mapper = new StateMapper();
+        var state = new WorkflowState
+        {
+            Nodes = new()
+            {
+                ["someNode"] = new Dictionary<string, object?>
+                {
+                    ["someField"] = "hello-from-node"
+                }
+            }
+        };
+
+        var node = new NodeDefinition
+        {
+            Id = "consumer",
+            StepType = "TestStep",
+            Parameters = new()
+            {
+                ["data"] = "{{nodes.someNode.someField}}"
+            }
+        };
+
+        // Act
+        var inputs = mapper.ResolveInputs(node, state);
+
+        // Assert
+        Assert.Equal("hello-from-node", inputs["data"]);
+    }
+
+    [Fact]
+    public void ApplyOutputs_WithMappings_DoesNotWriteToContextUnderNodeId()
+    {
+        // Arrange
+        var mapper = new StateMapper();
+        var state = new WorkflowState();
+
+        var node = new NodeDefinition
+        {
+            Id = "mapped-node",
+            StepType = "TestStep",
+            OutputMappings = new()
+            {
+                ["result"] = "Context.myResult"
+            }
+        };
+
+        var outputs = new Dictionary<string, object?>
+        {
+            ["result"] = "value"
+        };
+
+        // Act
+        mapper.ApplyOutputs(node, state, outputs);
+
+        // Assert — outputs go to mapped location, not under node id in Context
+        Assert.False(state.Context.ContainsKey("mapped-node"));
+    }
+
+    [Fact]
+    public void SetValueAtPath_Nodes_WritesToNodesDictionary()
+    {
+        // Arrange
+        var state = new WorkflowState();
+
+        // Act
+        StateMapper.SetValueAtPath(state, "Nodes.myNode.output", "test-value");
+
+        // Assert
+        var myNode = Assert.IsType<Dictionary<string, object?>>(state.Nodes["myNode"]);
+        Assert.Equal("test-value", myNode["output"]);
     }
 }

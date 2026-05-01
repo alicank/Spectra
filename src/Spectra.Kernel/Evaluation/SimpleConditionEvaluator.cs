@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using Spectra.Contracts.Evaluation;
 using Spectra.Contracts.State;
 
@@ -60,8 +60,11 @@ public partial class SimpleConditionEvaluator : IConditionEvaluator
             "Errors" => state.Errors,
             "RunId" => state.RunId,
             "CurrentNodeId" => state.CurrentNodeId,
+            "nodes" when parts.Length >= 2 => state.Context.GetValueOrDefault(parts[1]),
             _ => state.Context.GetValueOrDefault(parts[0])
         };
+
+        var startIndex = parts[0] == "nodes" ? 2 : 1;
 
         if (root == null || parts.Length == 1)
         {
@@ -69,7 +72,7 @@ public partial class SimpleConditionEvaluator : IConditionEvaluator
         }
 
         object? current = root;
-        for (var i = 1; i < parts.Length; i++)
+        for (var i = startIndex; i < parts.Length; i++)
         {
             current = GetNestedValue(current, parts[i]);
             if (current == null)
