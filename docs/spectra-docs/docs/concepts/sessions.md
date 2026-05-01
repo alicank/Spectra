@@ -67,9 +67,9 @@ When a session is waiting for the next user message, it does not keep compute re
 
 Instead, Spectra:
 
-- checkpoints the workflow state
+- checkpoints the workflow state when a checkpoint store is configured
 - stores the conversation history
-- resumes when the next message arrives
+- resumes through `SendMessageAsync` when the next message arrives
 
 This makes long-lived conversations practical.
 
@@ -93,32 +93,28 @@ The user sees one response, even if the system performed several tool calls behi
 ```csharp
 services.AddSpectra(builder =>
 {
-    builder.AddProvider<OpenAiCompatibleProvider>("openai", new OpenAiConfig
+    builder.AddOpenAi(config =>
     {
-        ApiKey = "sk-...",
-        DefaultModel = "gpt-4o"
+        config.ApiKey = "sk-...";
     });
 
-    builder.AddAgent("support", agent => agent
-        .WithProvider("openai")
-        .WithSystemPrompt("You are a helpful customer support agent.")
-        .WithTools("lookup_order", "check_inventory", "create_ticket"));
+    builder.AddAgent("support", "openai", "gpt-4o", agent => agent
+        .WithSystemPrompt("You are a helpful customer support agent."));
 });
 
-var workflow = Spectra.Workflow("support-chat")
-    .AddSessionStep("chat", agent: "support", options: new
-    {
-        greetingPrompt = "Hello! How can I help you today?",
-        maxTurns = 30,
-        exitPolicies = SessionExitPolicy.LlmDecides | SessionExitPolicy.UserCommand
-    })
+var workflow = WorkflowBuilder.Create("support-chat")
+    .AddSessionNode("chat", "support", session => session
+        .WithGreeting("Hello! How can I help you today?")
+        .WithMaxTurns(30)
+        .WithExitPolicy(SessionExitPolicy.LlmDecides | SessionExitPolicy.UserCommand)
+        .WithTools("lookup_order", "check_inventory", "create_ticket"))
     .Build();
 ```
 
 This is the common pattern:
 
 - register an agent
-- add a session step
+- add a session node
 - configure greeting, turn limit, and exit rules
 
 ---
@@ -145,7 +141,7 @@ For every new user message, the session:
 
 When an exit policy triggers, the session returns success with outputs like:
 
-- full conversation history
+- conversation history
 - turn count
 - exit reason
 
@@ -163,11 +159,11 @@ You can combine multiple policies, and the first one that triggers ends the sess
 | --- | --- | --- |
 | `LlmDecides` | `1` | The LLM calls an auto-injected `end_session` tool |
 | `UserCommand` | `2` | The user types a command like `/done`, `/exit`, or `/quit` |
-| `Condition` | `4` | A workflow state condition becomes true |
+| `Condition` | `4` | A configured state key in `Context` becomes truthy |
 | `MaxTurns` | `8` | The session reaches `maxTurns` |
 | `TokenBudget` | `16` | The cumulative token budget is reached |
 | `Timeout` | `32` | The session exceeds its configured lifetime |
-| `External` | `64` | An external API call ends the session |
+| `External` | `64` | Reserved for external session completion |
 
 Example:
 
@@ -207,11 +203,8 @@ Spectra supports these strategies:
 Example:
 
 ```csharp
-.AddSessionStep("chat", agent: "support", options: new
-{
-    historyStrategy = "SlidingWindow",
-    maxHistoryMessages = 40
-})
+.AddSessionNode("chat", "support", session => session
+    .WithHistoryStrategy(HistoryStrategy.SlidingWindow, maxMessages: 40))
 ```
 
 History is persisted with the workflow state, so it survives checkpointing and resume.
@@ -251,7 +244,7 @@ When the session ends successfully, these outputs are available to downstream no
 | Output | Type | Description |
 | --- | --- | --- |
 | `response` | `string?` | Last assistant response |
-| `messages` | `List<LlmMessage>` | Full conversation history |
+| `messages` | `List<LlmMessage>` | Conversation history after the configured history strategy is applied |
 | `turnCount` | `int` | Total completed turns |
 | `totalInputTokens` | `int` | Total prompt tokens across turns |
 | `totalOutputTokens` | `int` | Total completion tokens across turns |
@@ -262,10 +255,10 @@ These outputs make sessions composable with the rest of the graph.
 For example, a later node can use:
 
 ```text
-{{nodes.chat.output.messages}}
+{{context.chat.messages}}
 ```
 
-to process the full conversation.
+to process the conversation history.
 
 ---
 
@@ -292,18 +285,14 @@ A common design is:
 3. return to the user for review or confirmation
 
 ```csharp
-var workflow = Spectra.Workflow("onboarding")
-    .AddSessionStep("interview", agent: "interviewer", options: new { ... })
-    .AddAgentStep("process", agent: "processor", inputs: new
-    {
-        userPrompt = "Process this application: {{nodes.interview.output.messages}}"
-    })
-    .AddSessionStep("review", agent: "reviewer", options: new
-    {
-        greetingPrompt = "Here's your processed application: {{nodes.process.output.response}}. Look good?"
-    })
-    .Edge("interview", "process")
-    .Edge("process", "review")
+var workflow = WorkflowBuilder.Create("onboarding")
+    .AddSessionNode("interview", "interviewer")
+    .AddAgentNode("process", "processor", node => node
+        .WithUserPrompt("Process this application: {{context.interview.messages}}"))
+    .AddSessionNode("review", "reviewer", session => session
+        .WithGreeting("Here's your processed application: {{context.process.response}}. Look good?"))
+    .AddEdge("interview", "process")
+    .AddEdge("process", "review")
     .Build();
 ```
 
@@ -312,15 +301,12 @@ var workflow = Spectra.Workflow("onboarding")
 You can branch the workflow based on how the conversation ended.
 
 ```csharp
-var workflow = Spectra.Workflow("support")
-    .AddSessionStep("chat", agent: "support", options: new { ... })
-    .AddStep("escalate", new EscalateStep(), ...)
-    .AddStep("close", new CloseTicketStep(), ...)
-    .ConditionalEdge("chat", new()
-    {
-        ["{{nodes.chat.output.exitReason}} == 'max_turns'"] = "escalate",
-        ["default"] = "close"
-    })
+var workflow = WorkflowBuilder.Create("support")
+    .AddSessionNode("chat", "support")
+    .AddNode("escalate", "Escalate")
+    .AddNode("close", "CloseTicket")
+    .AddEdge("chat", "escalate", condition: "Context.chat.exitReason == 'max_turns'")
+    .AddEdge("chat", "close")
     .Build();
 ```
 

@@ -12,10 +12,15 @@ Everything starts with:
 
 ```csharp
 var runner = services.GetRequiredService<IWorkflowRunner>();
-var result = await runner.RunAsync(workflow);
+
+var state = new WorkflowState();
+state.Inputs["task"] = "do the thing";
+
+var result = await runner.RunAsync(workflow, state);
+// result.Status is a WorkflowRunStatus: Completed, Failed, Interrupted, etc.
 ```
 
-`IWorkflowRunner` is registered automatically by `AddSpectra`.
+`IWorkflowRunner` is registered automatically by `AddSpectra`. `RunAsync` returns a `WorkflowState` — inspect `result.Status` to know how execution ended.
 
 ---
 
@@ -78,21 +83,23 @@ Before a step runs, the runner prepares its inputs.
 
 ```text
 {{inputs.task}}
-{{nodes.fetch.output.data}}
+{{nodes.fetch.data}}
+{{context.result}}
+{{artifacts.report}}
 ```
 
-using the current workflow state.
+using the current workflow state. The supported roots are `inputs`, `nodes`, `context`, and `artifacts`. Node outputs are accessed as `{{nodes.<nodeId>.<outputKey>}}` — there is no `.output.` segment in the path.
 
 ### Injected context
 
-The runner can also inject runtime values automatically:
+The runner also injects runtime values automatically before calling the step:
 
-| Injected value | When it is used |
+| Injected key | When it is injected |
 | --- | --- |
 | `agentId` | The node is bound to an agent |
-| prompt references | The node defines prompt refs and no explicit prompt overrides them |
-| `userMessage` | A suspended session is resumed with `SendMessageAsync` |
-| handoff payload | Execution arrives from another agent |
+| `userPromptRef` | The node defines a prompt ref and no explicit `userPrompt` overrides it |
+| `userMessage` | A suspended session node is resumed via `SendMessageAsync` |
+| `userPrompt` | Execution arrives from a handoff — the runner synthesises the prompt from the handoff payload |
 | `__subgraphId` | The node executes a subgraph |
 
 This is what lets the same step model work across normal nodes, agents, sessions, and subgraphs.
@@ -108,11 +115,12 @@ Instead, it reacts to the `StepResult` returned by the step.
 | Status | What the runner does |
 | --- | --- |
 | `Succeeded` | Applies outputs, evaluates edges, continues |
-| `Failed` | Records the error, checkpoints, stops |
-| `NeedsContinuation` | Checkpoints, stops, resumes later at the same node |
-| `Interrupted` | Checkpoints with pending interrupt, waits for `ResumeWithResponseAsync` |
-| `AwaitingInput` | Checkpoints, waits for `SendMessageAsync` |
-| `Handoff` | Resolves target agent node, injects handoff context, continues there |
+| `Skipped` | Applies outputs, evaluates edges, continues (same as `Succeeded`) |
+| `Failed` | Records the error, checkpoints if `CheckpointOnFailure` is set, stops |
+| `NeedsContinuation` | Checkpoints if `CheckpointOnContinuation` is set, stops — resume later at the same node via `ResumeAsync` |
+| `Interrupted` | Checkpoints if `CheckpointOnInterrupt` is set, stops — resume later via `ResumeWithResponseAsync` |
+| `AwaitingInput` | Applies outputs, checkpoints if `CheckpointOnAwaitingInput` is set, stops — resume via `SendMessageAsync` |
+| `Handoff` | Resolves the target agent node, injects handoff context, continues there (with optional approval interrupt if `HandoffPolicy.RequiresApproval`) |
 
 This table is the key to understanding runner behavior.
 

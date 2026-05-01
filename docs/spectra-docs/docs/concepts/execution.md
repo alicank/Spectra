@@ -1,6 +1,11 @@
 # Execution Engine
 
-The execution engine is Spectra's core loop. It takes a `WorkflowDefinition` and runs it step by step, resolving state, evaluating conditions, and handling parallelism.
+The execution engine is Spectra's core loop. It takes a `WorkflowDefinition`, resolves node inputs from `WorkflowState`, executes steps, applies outputs, evaluates outgoing edges, emits events, and saves checkpoints when configured.
+
+Spectra has two execution paths:
+
+- `WorkflowRunner` — the main sequential runner used by `IWorkflowRunner`
+- `ParallelScheduler` — a separate scheduler for fan-out/fan-in style parallel workflows
 
 ## WorkflowRunner
 
@@ -8,101 +13,138 @@ The `WorkflowRunner` is the main entry point for executing workflows:
 
 ```csharp
 var runner = services.GetRequiredService<IWorkflowRunner>();
-var result = await runner.RunAsync(workflow, inputs, cancellationToken);
+var result = await runner.RunAsync(workflow, initialState, cancellationToken);
 ```
 
 The runner handles:
 
-- Topological ordering of nodes via `ExecutionPlan`
-- Sequential execution of nodes in dependency order
-- Parallel execution of independent branches via `ParallelScheduler`
-- Condition evaluation on edges to determine branching
-- Checkpoint saves at configurable points
-- Resume from a checkpoint after interruption
+- structural validation before execution
+- sequential execution starting at `EntryNodeId` or the first node
+- input resolution through `IStateMapper`
+- condition evaluation on outgoing edges
+- loopback edges and `MaxNodeIterations`
+- checkpoint saves at configured points
+- resume, interrupt response, session messages, and forked execution
+- workflow, step, state, branch, interrupt, streaming, and fork events
+
+The sequential runner does not automatically switch into `ParallelScheduler`. If a workflow has multiple unconditional outgoing edges from a node, validation warns that the sequential runner follows only the first one.
 
 ## Execution Flow
 
-```
+```text
 Start
-  │
-  ▼
-Build ExecutionPlan (topological sort)
-  │
-  ▼
-┌─── Next node(s) ready? ───┐
-│         │                  │
-│    Single node        Multiple nodes
-│         │                  │
-│    Run sequentially   Run via ParallelScheduler
-│         │                  │
-│         ▼                  ▼
-│    Execute step       Execute steps concurrently
-│         │                  │
-│    Write outputs      Merge outputs (with reducers)
-│         │                  │
-│    Evaluate edges     Evaluate edges
-│         │                  │
-│         └──────┬───────────┘
-│                │
-│         Checkpoint (if configured)
-│                │
-│                ▼
-│         More nodes? ─── Yes ──▶ loop back
-│                │
-│               No
-│                │
-│                ▼
-│            Complete
+  |
+  v
+Validate workflow
+  |
+  v
+Create or restore WorkflowState
+  |
+  v
+Select current node
+  |
+  v
+Resolve step inputs
+  |
+  v
+Handle interrupt-before if configured
+  |
+  v
+Execute step
+  |
+  v
+Handle StepStatus
+  |
+  +-- Failed / Interrupted / NeedsContinuation / AwaitingInput --> save checkpoint if configured, stop
+  |
+  +-- Succeeded / Handoff --> apply outputs
+  |
+  v
+Handle interrupt-after if configured
+  |
+  v
+Evaluate outgoing edges in order
+  |
+  v
+Save checkpoint if configured
+  |
+  v
+Next node? yes -> loop
+  |
+  no
+  |
+  v
+Complete
 ```
 
 ## ExecutionPlan
 
-The `ExecutionPlan` performs topological sorting on the graph to determine a valid execution order. It also detects:
+`ExecutionPlan` belongs to the parallel scheduling path. It performs dependency resolution and topological sorting over non-loopback edges. It also records validation errors such as:
 
-- Parallel branches (nodes with no dependencies between them)
-- Cycles (and validates them against the `CyclePolicy`)
-- Unreachable nodes
+- duplicate node IDs
+- edges that reference missing nodes
+- an invalid entry node
+- cycles among non-loopback edges
+
+Loopback edges are excluded from topological sorting and cycle detection.
 
 ## ParallelScheduler
 
-When the execution plan identifies independent branches, the `ParallelScheduler` handles concurrent execution:
+`ParallelScheduler` handles concurrent execution for workflows that need fan-out and fan-in behavior:
 
 ```csharp
-// Internal — you don't call this directly
-var scheduler = new ParallelScheduler(maxConcurrency: 4);
-await scheduler.ExecuteAsync(independentNodes, state, cancellationToken);
+var scheduler = services.GetRequiredService<ParallelScheduler>();
+var result = await scheduler.ExecuteAsync(workflow, initialState, cancellationToken);
 ```
 
-Concurrency is configurable. State writes from parallel branches use registered reducers to merge safely.
+It builds an `ExecutionPlan`, executes ready nodes concurrently up to `maxConcurrency`, emits parallel batch events, evaluates incoming edge conditions before marking dependent nodes ready, and applies outputs with `StateMapper`.
+
+Parallel state writes are protected by a lock while outputs are applied. Use output mappings carefully when multiple branches write to shared locations.
 
 ## RunContext
 
-The `RunContext` carries run-level information through the execution:
+`RunContext` carries caller-supplied identity and tenant information through the execution:
 
 ```csharp
 public class RunContext
 {
-    public string RunId { get; }
-    public IServiceProvider Services { get; }
-    public IEventSink EventSink { get; }
-    public CancellationToken CancellationToken { get; }
-    public CheckpointOptions? CheckpointOptions { get; }
+    public string? TenantId { get; set; }
+    public string? UserId { get; set; }
+    public IEnumerable<Claim> Claims { get; set; }
+    public string? CorrelationId { get; set; }
+    public Dictionary<string, string> Metadata { get; set; }
+    public IEnumerable<string> Roles { get; set; }
 }
 ```
 
-Every step receives the `RunContext` through its `StepContext`, giving it access to DI services, the event sink for custom events, and cancellation.
+Pass it with the overload that accepts a `RunContext`:
+
+```csharp
+var runContext = new RunContext
+{
+    TenantId = "tenant-1",
+    UserId = "user-42",
+    CorrelationId = "request-123"
+};
+
+var result = await runner.RunAsync(workflow, initialState, runContext, cancellationToken);
+```
+
+Every step receives this through `StepContext.RunContext`. `StepContext` also carries services, workflow state, resolved inputs, cancellation, memory, the current workflow definition, and optional interrupt and token-streaming callbacks.
 
 ## Error Handling
 
-If a step throws an exception or returns `StepStatus.Failed`:
+If a step returns `StepStatus.Failed`:
 
-1. The error is captured in the step's output
-2. A `StepFailed` event is emitted
-3. The workflow stops (unless a fallback edge is defined)
-4. The final `WorkflowResult` reflects the failure
+1. A `StepCompletedEvent` is emitted with `Status = StepStatus.Failed`.
+2. The error message is added to `WorkflowState.Errors`.
+3. A failure checkpoint is saved if checkpointing is configured for failures.
+4. The workflow stops and the final `WorkflowState.Status` is `WorkflowRunStatus.Failed`.
 
-You can define error-handling edges using conditions:
+If a step throws `InterruptException`, the runner emits `StepInterruptedEvent`, saves an interrupt checkpoint if configured, and stops in the interrupted state.
+
+General exceptions from step code are not converted into fallback branches by the sequential runner. If you need a fallback path, return a successful/recoverable output such as `status = NeedsFallback` and route with a conditional edge, or use resilience/fallback support around the operation:
 
 ```csharp
-.Edge("risky-step", "fallback", condition: "state.nodes.risky-step.status == 'Failed'")
+.AddEdge("risky-step", "fallback", condition: "nodes.risky-step.status == 'NeedsFallback'")
 ```

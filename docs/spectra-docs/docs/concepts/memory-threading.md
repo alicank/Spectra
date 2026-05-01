@@ -1,30 +1,31 @@
 # Memory & Threading
 
-Spectra provides two persistence mechanisms: **memory** for cross-session knowledge and **threading** for conversation management.
+Spectra provides two persistence mechanisms: **memory** for cross-run knowledge and **threading** for managing conversation or run lifecycles.
 
 ---
 
 ## Long-Term Memory
 
-Memory allows agents and workflows to store and recall information across runs. Unlike workflow state (which lives within a single execution), memory persists indefinitely.
+Memory allows agents and workflows to store and recall information across runs. Unlike workflow state, which belongs to a single execution, memory is stored behind an `IMemoryStore`.
 
 ### IMemoryStore
 
 ```csharp
 public interface IMemoryStore
 {
-    Task SetAsync(string ns, string key, MemoryEntry entry, CancellationToken ct = default);
-    Task<MemoryEntry?> GetAsync(string ns, string key, CancellationToken ct = default);
+    Task<MemoryEntry?> GetAsync(string @namespace, string key, CancellationToken ct = default);
+    Task SetAsync(string @namespace, string key, MemoryEntry entry, CancellationToken ct = default);
+    Task DeleteAsync(string @namespace, string key, CancellationToken ct = default);
+    Task<IReadOnlyList<MemoryEntry>> ListAsync(string @namespace, CancellationToken ct = default);
     Task<IReadOnlyList<MemorySearchResult>> SearchAsync(MemorySearchQuery query, CancellationToken ct = default);
-    Task<IReadOnlyList<MemoryEntry>> ListAsync(string ns, CancellationToken ct = default);
-    Task DeleteAsync(string ns, string key, CancellationToken ct = default);
+    Task PurgeAsync(string @namespace, CancellationToken ct = default);
     MemoryStoreCapabilities Capabilities { get; }
 }
 ```
 
 ### Memory Entries
 
-Each memory entry has a namespace, key, content, and optional tags and metadata:
+Each memory entry has a namespace, key, content, optional tags, optional metadata, timestamps, optional expiration, and schema version:
 
 ```csharp
 var entry = new MemoryEntry
@@ -32,7 +33,7 @@ var entry = new MemoryEntry
     Namespace = "user-preferences",
     Key = "language",
     Content = "User prefers French for all communications",
-    Tags = new List<string> { "preferences", "language" },
+    Tags = ["preferences", "language"],
     Metadata = new Dictionary<string, string>
     {
         ["source"] = "conversation-123",
@@ -45,6 +46,8 @@ var entry = new MemoryEntry
 await memoryStore.SetAsync("user-preferences", "language", entry);
 ```
 
+You can also use `MemoryEntry.Create(...)` and `entry.GetValue<T>()` when storing typed JSON content.
+
 ### Searching Memory
 
 ```csharp
@@ -52,7 +55,7 @@ var results = await memoryStore.SearchAsync(new MemorySearchQuery
 {
     Namespace = "user-preferences",
     Text = "language preference",
-    Tags = new List<string> { "preferences" },
+    Tags = ["preferences"],
     MaxResults = 5
 });
 
@@ -62,21 +65,23 @@ foreach (var result in results)
 }
 ```
 
+`MemorySearchQuery` also supports `MetadataFilters` and `IncludeExpired`. Stores that do not support search can return an empty list; check `memoryStore.Capabilities`.
+
 ### Built-in Stores
 
 **InMemoryMemoryStore** — For testing and prototyping:
 
 ```csharp
-builder.AddMemoryStore<InMemoryMemoryStore>();
+builder.AddInMemoryMemory();
 ```
 
 **FileMemoryStore** — JSON files on disk:
 
 ```csharp
-builder.AddMemoryStore(new FileMemoryStore("./memory"));
+builder.AddFileMemory("./memory");
 ```
 
-For production, implement `IMemoryStore` backed by a vector database (Weaviate, Qdrant, Pinecone) for semantic search. See the [Build Your Own Memory Store](../others/build-your-own-memory-store.md) guide.
+For production, implement `IMemoryStore` backed by your database or vector store. See the [Build Your Own Memory Store](../guides/build-your-own-memory-store.md) guide.
 
 ---
 
@@ -89,24 +94,25 @@ Agents can interact with memory during their tool-calling loop through two built
 | `store_memory` | Save information to memory during an agent loop. |
 | `recall_memory` | Query memory for relevant past information. |
 
-```csharp
-builder.AddAgent("assistant", agent => agent
-    .WithProvider("openai")
-    .WithTools("store_memory", "recall_memory")
-    .WithSystemPrompt("You can remember information across conversations."));
-```
+`store_memory` accepts `key`, `content`, optional `namespace`, and optional comma-separated `tags`.
+
+`recall_memory` accepts `query`, optional `namespace`, optional comma-separated `tags`, and optional `max_results`.
+
+The tool classes are `StoreMemoryTool` and `RecallMemoryTool`. They can be registered like other tools if you want explicit control.
 
 ### Auto-Injection
 
-When `MemoryOptions.AutoInjectAgentTools` is `true`, memory tools are automatically added to every agent that has a `DelegateToAgentTool` configured — you don't need to list them manually.
+`MemoryOptions.AutoInjectAgentTools` is intended to automatically add memory tools when an agent has supervisor worker delegation configured.
 
 ```csharp
-builder.AddMemory(options =>
+builder.AddMemory(new InMemoryMemoryStore(), options =>
 {
     options.AutoInjectAgentTools = true;
-    options.DefaultNamespace = MemoryNamespace.From("global");
+    options.DefaultNamespace = MemoryNamespace.Global;
 });
 ```
+
+In the current default registration path, this option is not wired into `AgentStep`, so explicit tool registration is the reliable path if you need memory tools in agent loops.
 
 ---
 
@@ -126,8 +132,8 @@ Persists data to long-term memory.
 |-------|------|---------|-------------|
 | `namespace` | `string` | `"global"` | Memory scope. Namespaces isolate entries from each other. |
 | `key` | `string` | **required** | Unique identifier for the entry within the namespace. |
-| `content` | `string` | **required** | The data to store. Non-string values are serialized. |
-| `tags` | `string` | — | Comma-separated tags for filtering (e.g. `"preferences,user"`). |
+| `content` | `string` | **required** | The data to store. |
+| `tags` | `string` | — | Comma-separated tags for filtering, for example `"preferences,user"`. |
 
 #### Outputs
 
@@ -140,20 +146,18 @@ Persists data to long-term memory.
 #### Example
 
 ```csharp
-var workflow = Spectra.Workflow("save-preference")
-    .AddStep("store", new MemoryStoreStep(), inputs: new
-    {
-        @namespace = "user-preferences",
-        key = "theme",
-        content = "{{inputs.selectedTheme}}",
-        tags = "preferences,ui"
-    })
+var workflow = WorkflowBuilder.Create("save-preference")
+    .AddNode("store", "memory.store", node => node
+        .WithParameter("namespace", "user-preferences")
+        .WithParameter("key", "theme")
+        .WithParameter("content", "{{inputs.selectedTheme}}")
+        .WithParameter("tags", "preferences,ui"))
     .Build();
 ```
 
 #### Behavior
 
-- If an entry with the same namespace and key already exists, it is **updated** (the `CreatedAt` timestamp is preserved).
+- If an entry with the same namespace and key already exists, it is **updated** and the original `CreatedAt` timestamp is preserved.
 - Metadata is automatically populated with `source = "step"`, `nodeId`, `runId`, and `workflowId`.
 - If no `IMemoryStore` is configured, the step fails with a clear error message.
 
@@ -172,7 +176,7 @@ Retrieves data from long-term memory. Supports three retrieval modes: exact key 
 | `namespace` | `string` | `"global"` | Memory scope to search within. |
 | `key` | `string` | — | Exact key lookup. Takes precedence over `query`. |
 | `query` | `string` | — | Search text for finding relevant memories. |
-| `tags` | `string` | — | Comma-separated tag filter (only with `query`). |
+| `tags` | `string` | — | Comma-separated tag filter, only used with `query`. |
 | `maxResults` | `int` | `10` | Maximum entries to return. |
 
 #### Outputs
@@ -189,32 +193,23 @@ The step picks a mode based on which inputs are set:
 
 | Mode | Trigger | Behavior |
 |------|---------|----------|
-| **Key lookup** | `key` is set | Returns the single entry with that exact key (or empty). |
-| **Search** | `query` is set (no `key`) | Searches by text, optionally filtered by tags. Uses `IMemoryStore.SearchAsync`. |
-| **List** | Neither `key` nor `query` | Lists recent entries in the namespace (up to `maxResults`). |
+| **Key lookup** | `key` is set | Returns the single entry with that exact key, or an empty list. |
+| **Search** | `query` is set and `key` is not set | Searches by text, optionally filtered by tags. Uses `IMemoryStore.SearchAsync`. |
+| **List** | Neither `key` nor `query` | Lists recent entries in the namespace, up to `maxResults`. |
 
-#### Example — RAG with Memory
+#### Example — Store and Recall
 
 ```csharp
-var workflow = Spectra.Workflow("remember-and-answer")
-    .AddStep("recall", new MemoryRecallStep(), inputs: new
-    {
-        query = "{{inputs.question}}",
-        @namespace = "knowledge-base",
-        maxResults = 5
-    })
-    .AddPromptStep("answer", agent: "openai", inputs: new
-    {
-        userPrompt = """
-            Context from memory:
-            {{nodes.recall.output.memories}}
-
-            Question: {{inputs.question}}
-
-            Answer based on the context above.
-            """
-    })
-    .Edge("recall", "answer")
+var workflow = WorkflowBuilder.Create("remember-and-recall")
+    .AddNode("store", "memory.store", node => node
+        .WithParameter("namespace", "user-preferences")
+        .WithParameter("key", "favorite-language")
+        .WithParameter("content", "{{inputs.language}}")
+        .WithParameter("tags", "preferences,onboarding"))
+    .AddNode("recall", "memory.recall", node => node
+        .WithParameter("namespace", "user-preferences")
+        .WithParameter("key", "favorite-language"))
+    .AddEdge("store", "recall")
     .Build();
 ```
 
@@ -225,52 +220,79 @@ var workflow = Spectra.Workflow("remember-and-answer")
 
 ---
 
-## Threading (Conversation Management)
+## Threading (Lifecycle Management)
 
-Threads track conversation history across multiple interactions. This is how `SessionStep` maintains context between user turns.
+Threads are first-class lifecycle records for grouping workflow runs and checkpoint history. They are useful for querying, cloning, retaining, and deleting long-running conversations or run groups.
+
+`SessionStep` maintains conversation state through workflow state and checkpoints. `IThreadManager` manages thread records and their linked checkpoints; it does not store a list of chat messages.
 
 ### IThreadManager
 
 ```csharp
 public interface IThreadManager
 {
-    Task<Thread> CreateAsync(string? workflowName = null, CancellationToken ct = default);
+    Task<Thread> CreateAsync(Thread thread, CancellationToken ct = default);
     Task<Thread?> GetAsync(string threadId, CancellationToken ct = default);
-    Task UpdateAsync(Thread thread, CancellationToken ct = default);
-    Task<IReadOnlyList<Thread>> ListAsync(ThreadFilter? filter = null, CancellationToken ct = default);
+    Task<Thread> UpdateAsync(Thread thread, CancellationToken ct = default);
     Task DeleteAsync(string threadId, CancellationToken ct = default);
+    Task<IReadOnlyList<Thread>> ListAsync(ThreadFilter? filter = null, CancellationToken ct = default);
+    Task<Thread> CloneAsync(string sourceThreadId, string? newThreadId = null, bool cloneCheckpoints = true, CancellationToken ct = default);
+    Task<RetentionResult> ApplyRetentionPolicyAsync(RetentionPolicy policy, ThreadFilter? filter = null, CancellationToken ct = default);
+    Task<int> BulkDeleteAsync(ThreadFilter filter, CancellationToken ct = default);
 }
 ```
 
 ### Thread Structure
 
-A thread holds the message history and metadata:
+A thread stores lifecycle metadata and the current run ID:
 
 ```csharp
-public class Thread
+public sealed record Thread
 {
-    public string Id { get; }
-    public List<Message> Messages { get; }
-    public Dictionary<string, object> Metadata { get; }
-    public DateTime CreatedAt { get; }
-    public DateTime UpdatedAt { get; }
+    public required string ThreadId { get; init; }
+    public required string WorkflowId { get; init; }
+    public string? TenantId { get; init; }
+    public string? UserId { get; init; }
+    public string? Label { get; init; }
+    public IReadOnlyList<string> Tags { get; init; }
+    public required string RunId { get; init; }
+    public Dictionary<string, string> Metadata { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+    public string? SourceThreadId { get; init; }
 }
+```
+
+### Registration
+
+Use the built-in in-memory manager:
+
+```csharp
+builder.AddInMemoryThreadManager();
+```
+
+Or register your own:
+
+```csharp
+builder.AddThreadManager(new PostgresThreadManager());
 ```
 
 ### Retention Policies
 
-Control how threads are managed over time:
+Retention is applied through the manager:
 
 ```csharp
-builder.AddThreadManager<InMemoryThreadManager>(new RetentionPolicy
+var result = await threadManager.ApplyRetentionPolicyAsync(new RetentionPolicy
 {
-    MaxMessages = 100,
-    MaxAge = TimeSpan.FromDays(30)
+    MaxAge = TimeSpan.FromDays(30),
+    MaxCheckpointsPerThread = 100
 });
 ```
 
+`MaxAge` deletes old threads based on `UpdatedAt`. `MaxCheckpointsPerThread` trims checkpoint history when a checkpoint store is attached to the thread manager. `ApplyToStatus` can limit age-based deletion to threads whose latest checkpoint has a matching status.
+
 ### Built-in Implementations
 
-**InMemoryThreadManager** — For testing and short-lived applications.
+**InMemoryThreadManager** — For testing and short-lived applications. When constructed with an `ICheckpointStore`, deleting a thread purges its run checkpoints, and cloning can fork checkpoint history.
 
-For production, implement `IThreadManager` backed by a database. See the [Build Your Own Thread Manager](../others/build-your-own-thread-manager.md) guide.
+For production, implement `IThreadManager` backed by a database. See the [Build Your Own Thread Manager](../guides/build-your-own-thread-manager.md) guide.

@@ -204,6 +204,7 @@ Spectra tracks guard-rail state in an `AgentExecutionContext` that flows through
 | `HandoffHistory` | Audit trail of handoffs |
 | `WallClockDeadline` | Deadline for the chain or session |
 | `CyclePolicy` | Active cycle detection policy |
+| `OriginatorRunId` | Run ID of the originating workflow execution |
 | `ParentAgentId` | Parent agent in the current chain |
 
 This context is copied when passed into child agent execution so each delegation branch can be tracked safely.

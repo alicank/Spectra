@@ -21,20 +21,20 @@ inputs.name
 inputs.document
 nodes.fetch.output
 nodes.analyze.summary
-global.correlationId
+context.correlationId
 ```
 
 - `inputs.*` — values you provide at the start of the workflow
 - `nodes.<nodeId>.*` — values produced by nodes during execution
-- `global.*` — shared workflow-wide values
+- `context.*` — shared workflow-wide values
+- `artifacts.*` — files or blobs produced during the run
 
 For example, a workflow might start with:
 
 ```csharp
 var state = new WorkflowState
 {
-    ["inputs.name"]  = "World",
-    ["inputs.topic"] = "workflow orchestration"
+    Inputs = new() { ["name"] = "World", ["topic"] = "workflow orchestration" }
 };
 ```
 
@@ -72,7 +72,7 @@ Spectra resolves `{{...}}` expressions against the current workflow state at run
 | `{{inputs.name}}`                 | An input value provided at the start of the workflow |
 | `{{nodes.stepId.output}}`         | The full output of a node                            |
 | `{{nodes.stepId.output.field}}`   | A nested field inside a node output                  |
-| `{{global.key}}`                  | A shared global value                                |
+| `{{context.key}}`                 | A shared workflow-wide value                         |
 
 > **Key convention:** `{{nodes.someNode.output}}` is how downstream nodes refer to upstream results.
 
@@ -80,14 +80,15 @@ Spectra resolves `{{...}}` expressions against the current workflow state at run
 
 ## WorkflowState
 
-Every workflow run has a `WorkflowState` object that accumulates data over time — workflow inputs, node outputs, and shared global values. You interact with it through path-based keys and template expressions rather than manipulating the dictionaries directly.
+Every workflow run has a `WorkflowState` object that accumulates data over time — workflow inputs, node outputs, context values, and artifacts. You interact with it through path-based keys and template expressions rather than manipulating the dictionaries directly.
 
 ```csharp
 public class WorkflowState
 {
-    public Dictionary<string, object> Inputs { get; }
-    public Dictionary<string, object> Nodes  { get; }
-    public Dictionary<string, object> Global { get; }
+    public Dictionary<string, object?> Inputs    { get; set; }
+    public Dictionary<string, object?> Nodes     { get; set; }
+    public Dictionary<string, object?> Context   { get; set; }
+    public Dictionary<string, object?> Artifacts { get; set; }
 }
 ```
 
@@ -104,15 +105,17 @@ When multiple branches run in parallel and both write to the same state key, Spe
 ```csharp
 public interface IStateReducer
 {
-    object Reduce(object current, object incoming);
+    string Key { get; }
+    object? Reduce(object? currentValue, object? incomingValue);
 }
 ```
+
+Each reducer declares its own key. Reducers are registered via an `IStateReducerRegistry`:
 
 ```csharp
 services.AddSpectra(builder =>
 {
-    builder.AddStateReducer("results", new AppendListReducer());
-    builder.AddStateReducer("score",   new SumReducer());
+    builder.AddStateReducers(registry); // registry implements IStateReducerRegistry
 });
 ```
 
@@ -135,7 +138,6 @@ You can optionally define a schema for workflow state to require certain inputs 
 public interface IStateSchema
 {
     IReadOnlyList<StateFieldDefinition> Fields { get; }
-    ValidationResult Validate(WorkflowState state);
 }
 ```
 
@@ -171,7 +173,7 @@ Use these conventions consistently:
 
 - Put incoming workflow values under `inputs.*`
 - Read previous node results from `nodes.<nodeId>.*`
-- Use `global.*` only for truly shared workflow-wide values
+- Use `context.*` only for truly shared workflow-wide values
 - Add reducers when parallel branches write to the same key
 - Add schema validation when workflows need stronger guarantees
 

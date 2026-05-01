@@ -79,8 +79,23 @@ If you want your own backend, implement `IAuditStore`:
 ```csharp
 public interface IAuditStore
 {
-    Task WriteAsync(AuditEntry entry, CancellationToken ct = default);
-    Task<IReadOnlyList<AuditEntry>> QueryAsync(AuditQuery query, CancellationToken ct = default);
+    Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AuditEntry>> QueryByRunAsync(
+        string runId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AuditEntry>> QueryByTenantAsync(
+        string tenantId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AuditEntry>> QueryAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        int maxResults = 1000,
+        CancellationToken cancellationToken = default);
 }
 ```
 

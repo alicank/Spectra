@@ -1,8 +1,8 @@
 # Tenant Isolation & Identity
 
-Spectra treats caller identity as a first-class runtime primitive. A `RunContext` carrying `TenantId`, `UserId`, roles, and claims is injected at workflow invocation and automatically propagated through every step, every subgraph, every tool call, every checkpoint, and every event.
+Spectra treats caller identity as a first-class runtime primitive. A `RunContext` carrying `TenantId`, `UserId`, roles, and claims is injected at workflow invocation and automatically propagated through steps, subgraphs, checkpoints, events, and audit entries.
 
-This isn't an add-on — it's baked into the execution pipeline.
+This isn't an add-on - it's baked into the execution pipeline. Tool calls are executed with the workflow state; tool-call events emitted by Spectra are identity-stamped, but the `ITool` interface itself does not receive `RunContext` directly.
 
 ---
 
@@ -27,8 +27,8 @@ var result = await runner.RunAsync(workflow, state, new RunContext
 | `UserId` | User identifier from your JWT or claims. |
 | `Claims` | Pass-through claims from your identity provider. |
 | `Roles` | Convenience role list. Check with `HasRole("admin")`. |
-| `CorrelationId` | Cross-system tracing ID. |
-| `Metadata` | Arbitrary key-value pairs threaded through events and audit entries. |
+| `CorrelationId` | Cross-system tracing ID available on the run context. |
+| `Metadata` | Arbitrary key-value pairs available to steps through `StepContext.RunContext`. |
 
 `RunContext.Anonymous` is the default when no identity is provided.
 
@@ -41,10 +41,11 @@ Once injected, `RunContext` is automatically propagated to:
 | Destination | How It's Used |
 |-------------|---------------|
 | **Every event** | `TenantId` and `UserId` are stamped on every `WorkflowEvent`. Filter your event sink by tenant. |
-| **Every checkpoint** | Checkpoints carry `TenantId` and `UserId`. Query checkpoints scoped to a tenant. |
-| **Every audit entry** | The [audit trail](../observability/audit.md) records who triggered what. |
+| **Every checkpoint** | Checkpoints carry `TenantId` and `UserId`. Build tenant-scoped queries in your checkpoint store. |
+| **Every audit entry** | The [audit trail](../observability/audit.md) records `TenantId` and `UserId` from the event or current run context. |
 | **Every step** | Steps receive `RunContext` via `StepContext.RunContext`. |
 | **Subgraphs** | Child workflows inherit the parent's `RunContext`. |
+| **Agent tool-call events** | Tool-call events emitted by `AgentStep` are stamped with `TenantId` and `UserId`. |
 
 ---
 
@@ -65,7 +66,7 @@ public async Task<StepResult> ExecuteAsync(StepContext context)
 }
 ```
 
-Spectra never authenticates — it carries identity like `HttpContext.User` carries a `ClaimsPrincipal`. Authentication happens in your API layer; Spectra just propagates the result.
+Spectra never authenticates - it carries identity like `HttpContext.User` carries a `ClaimsPrincipal`. Authentication happens in your API layer; Spectra just propagates the result.
 
 ---
 
@@ -83,21 +84,23 @@ public async Task<IReadOnlyList<Checkpoint>> ListByTenantAsync(string tenantId)
 }
 ```
 
-This is critical for multi-tenant SaaS deployments where tenants must never see each other's workflow data.
+The built-in checkpoint store contract exposes `ListAsync`, `ListByRunAsync`, and related run-oriented methods. Tenant-scoped listing is a storage concern for your production `ICheckpointStore` implementation.
 
 ---
 
 ## Environment-Specific Agent Overrides
 
-Combine `RunContext` with the three-layer agent resolution to deploy the same workflow with different configurations per environment:
+Combine `RunContext` with the agent resolution chain to deploy the same workflow with different configurations per environment:
 
 ```csharp
-// Production: use GPT-4o
+// Production: use the workflow's configured agents
 var prodContext = new RunContext { Metadata = { ["env"] = "prod" } };
 await runner.RunAsync(workflow, state, prodContext);
 
 // Staging: override the agent at runtime
-state.Context["__agentOverrides"] = new Dictionary<string, AgentDefinition>
+var stagingContext = new RunContext { Metadata = { ["env"] = "staging" } };
+var stagingState = new WorkflowState();
+stagingState.Context["__agentOverrides"] = new Dictionary<string, AgentDefinition>
 {
     ["researcher"] = new AgentDefinition
     {
@@ -105,16 +108,19 @@ state.Context["__agentOverrides"] = new Dictionary<string, AgentDefinition>
         Temperature = 0.3, MaxTokens = 4096
     }
 };
-await runner.RunAsync(workflow, state, stagingContext);
+await runner.RunAsync(workflow, stagingState, stagingContext);
 ```
 
 ---
 
 ## Thread Lifecycle Management
 
-The `IThreadManager` provides full CRUD for conversation threads, scoped by tenant:
+The `IThreadManager` provides CRUD, cloning, retention, and bulk cleanup for conversation threads. Threads carry `TenantId` and `UserId`, and `ThreadFilter` lets you query by tenant:
 
 ```csharp
+// Register the built-in in-memory manager
+services.AddSpectra(builder => builder.AddInMemoryThreadManager());
+
 // List threads for a specific tenant
 var threads = await threadManager.ListAsync(new ThreadFilter
 {
@@ -123,14 +129,16 @@ var threads = await threadManager.ListAsync(new ThreadFilter
 });
 
 // Apply retention policies
-builder.AddThreadManager<InMemoryThreadManager>(new RetentionPolicy
-{
-    MaxMessages = 100,
-    MaxAge = TimeSpan.FromDays(30)
-});
+var retention = await threadManager.ApplyRetentionPolicyAsync(
+    new RetentionPolicy
+    {
+        MaxCheckpointsPerThread = 100,
+        MaxAge = TimeSpan.FromDays(30)
+    },
+    new ThreadFilter { TenantId = "acme-corp" });
 ```
 
-This directly addresses a common gap in agent frameworks — thread cleanup, cloning, and tenant-scoped queries are first-class operations, not afterthoughts.
+This directly addresses a common gap in agent frameworks - thread cleanup, cloning, and tenant-scoped queries are first-class operations, not afterthoughts. Your application is still responsible for passing the right tenant filter when exposing thread APIs.
 
 ---
 

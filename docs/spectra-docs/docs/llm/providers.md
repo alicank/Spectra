@@ -428,11 +428,12 @@ builder.AddOpenRouter(config =>
 
 ## Model capabilities
 
-Providers can advertise what a model supports.
+Every provider config exposes a `Capabilities` property that lets you tell Spectra what a model supports. Each provider has its own capabilities config type (`ModelCapabilitiesConfig` for OpenAI/OpenAI-compatible, `AnthropicCapabilitiesConfig`, `GeminiCapabilitiesConfig`, `OllamaCapabilitiesConfig`, `OpenRouterCapabilitiesConfig`), but they all expose the same fields.
 
-That helps Spectra adapt behavior automatically.
+Spectra sets sensible defaults for each provider. Override only when a specific model differs from the provider default — for example, an older model that does not support tool calling.
 
 ```csharp
+// OpenAI / OpenAI-compatible
 builder.AddOpenAi(config =>
 {
     config.Capabilities = new ModelCapabilitiesConfig
@@ -443,6 +444,18 @@ builder.AddOpenAi(config =>
         SupportsStreaming = true,
         MaxContextTokens = 128_000,
         MaxOutputTokens = 16_384
+    };
+});
+
+// Anthropic
+builder.AddAnthropic(config =>
+{
+    config.Capabilities = new AnthropicCapabilitiesConfig
+    {
+        SupportsToolCalling = true,
+        SupportsStreaming = true,
+        MaxContextTokens = 200_000,
+        MaxOutputTokens = 8_192
     };
 });
 ```
@@ -479,12 +492,12 @@ public interface ILlmClient
     string ProviderName { get; }
     string ModelId { get; }
     ModelCapabilities Capabilities { get; }
-    Task<LlmResponse> CompleteAsync(LlmRequest request, CancellationToken ct = default);
+    Task<LlmResponse> CompleteAsync(LlmRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface ILlmStreamClient : ILlmClient
 {
-    IAsyncEnumerable<string> StreamAsync(LlmRequest request, CancellationToken ct = default);
+    IAsyncEnumerable<string> StreamAsync(LlmRequest request, CancellationToken cancellationToken = default);
 }
 ```
 

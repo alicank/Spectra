@@ -88,7 +88,7 @@ var result = await runner.ForkAndRunAsync(
     newRunId: "fork-xyz",
     stateOverrides: new WorkflowState
     {
-        Inputs = { ["threshold"] = 0.9 }
+        Inputs = new() { ["threshold"] = 0.9 }
     });
 ```
 
@@ -167,7 +167,7 @@ var result = await runner.ForkAndRunAsync(
     newRunId: "corrected-run",
     stateOverrides: new WorkflowState
     {
-        Inputs = { ["data"] = correctedData }
+        Inputs = new() { ["data"] = correctedData }
     });
 ```
 
@@ -183,7 +183,7 @@ var sandbox = await runner.ForkAndRunAsync(
     newRunId: "sandbox-run",
     stateOverrides: new WorkflowState
     {
-        Inputs = { ["budget"] = 50_000 }
+        Inputs = new() { ["budget"] = 50_000 }
     });
 ```
 

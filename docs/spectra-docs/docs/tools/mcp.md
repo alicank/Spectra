@@ -63,8 +63,8 @@ builder.AddMcpServer(new McpServerConfig
 {
     Name = "filesystem",
     Command = "npx",
-    Args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"],
-    Transport = "stdio"
+    Arguments = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"],
+    Transport = McpTransportType.Stdio
 });
 ```
 
@@ -87,7 +87,7 @@ builder.AddMcpServer(new McpServerConfig
 {
     Name = "remote-tools",
     Url = "https://my-mcp-server.com/sse",
-    Transport = "sse"
+    Transport = McpTransportType.Sse
 });
 ```
 
@@ -107,13 +107,13 @@ For more advanced setups, use the builder-style API.
 
 ```csharp
 builder.AddMcpServer("data-tools", mcp => mcp
-    .WithCommand("node", "server.js")
+    .UseStdio("node", "server.js")
     .WithEnvironment("API_KEY", apiKey)
     .WithEnvironment("DATABASE_URL", dbUrl)
     .WithResilience(new McpResilienceOptions
     {
         MaxRetries = 2,
-        ConnectionTimeout = TimeSpan.FromSeconds(10)
+        Timeout = TimeSpan.FromSeconds(10)
     }));
 ```
 
@@ -134,7 +134,7 @@ This is useful when the server needs:
 | `Args` | Command-line arguments |
 | `Url` | Endpoint for `sse` |
 | `Transport` | `"stdio"` or `"sse"` |
-| `Environment` | Environment variables for the launched process |
+| `EnvironmentVariables` | Environment variables for the launched process |
 
 ---
 
@@ -171,11 +171,11 @@ var config = new McpServerConfig
 {
     Name = "flaky-server",
     Url = "https://external-api.com/mcp",
-    Transport = "sse",
+    Transport = McpTransportType.Sse,
     Resilience = new McpResilienceOptions
     {
         MaxRetries = 3,
-        ConnectionTimeout = TimeSpan.FromSeconds(15)
+        Timeout = TimeSpan.FromSeconds(15)
     }
 };
 ```

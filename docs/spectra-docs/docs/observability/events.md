@@ -123,6 +123,13 @@ Spectra emits events across several categories.
 | `StateChangedEvent` | Workflow state changes | Section, key, new value |
 | `BranchEvaluatedEvent` | An edge condition is evaluated | From node, to node, condition, result |
 
+### Parallel execution
+
+| Event | Fired when | Key data |
+| --- | --- | --- |
+| `ParallelBatchStartedEvent` | A parallel batch starts | Node IDs, batch size |
+| `ParallelBatchCompletedEvent` | A parallel batch finishes | Node IDs, success count, failure count, duration |
+
 ### Agent loop
 
 | Event | Fired when | Key data |
@@ -157,11 +164,27 @@ Spectra emits events across several categories.
 | `QualityGateRejectedEvent` | A response fails a quality gate | Provider, model, rejection reason |
 | `FallbackExhaustedEvent` | All fallback candidates fail | Attempt count, last error |
 
+### Tool resilience
+
+| Event | Fired when | Key data |
+| --- | --- | --- |
+| `ToolCircuitStateChangedEvent` | A tool circuit breaker changes state | Tool name, previous state, new state, failures |
+| `ToolCallSkippedEvent` | A tool call is skipped by an open circuit | Tool name, circuit state, fallback tool |
+
+### MCP
+
+| Event | Fired when | Key data |
+| --- | --- | --- |
+| `McpServerConnectedEvent` | An MCP server connects and tools are discovered | Server name, transport, tool count, tool names |
+| `McpServerDisconnectedEvent` | An MCP server disconnects | Server name, reason |
+| `McpToolCallEvent` | An MCP tool is invoked | Server, tool, transport, duration, success, retry count |
+| `McpToolCallBlockedEvent` | An MCP tool call is blocked by a guardrail | Server, tool, reason |
+
 ### Streaming
 
 | Event | Fired when | Key data |
 | --- | --- | --- |
-| `TokenStreamEvent` | A token chunk is emitted | Token text, token index |
+| `TokenStreamEvent` | A token chunk is emitted | Token text, token index, completion flag |
 
 ---
 
@@ -210,6 +233,8 @@ All workflow events inherit common base fields such as:
 - `NodeId`
 - `Timestamp`
 - `EventType`
+- `TenantId`
+- `UserId`
 
 That makes it easier to:
 

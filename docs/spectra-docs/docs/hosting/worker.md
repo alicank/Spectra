@@ -44,7 +44,7 @@ var host = Host.CreateDefaultBuilder(args)
             spectra.AddOpenRouter(c =>
             {
                 c.ApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")!;
-                c.DefaultModel = "openai/gpt-4o-mini";
+                c.Model = "openai/gpt-4o-mini";
             });
 
             spectra.AddWorkflowsFromDirectory("./workflows");
@@ -84,8 +84,8 @@ public class DocumentProcessingWorker : BackgroundService
             var workflow = _workflowStore.Get("process-document")!;
 
             var state = new WorkflowState();
-            state["inputs.documentId"] = document.Id;
-            state["inputs.content"] = document.Content;
+            state.Inputs["documentId"] = document.Id;
+            state.Inputs["content"] = document.Content;
 
             await _runner.RunAsync(workflow, state, stoppingToken);
         }
@@ -132,7 +132,7 @@ var host = Host.CreateDefaultBuilder(args)
             spectra.AddAnthropic(c =>
             {
                 c.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!;
-                c.DefaultModel = "claude-sonnet-4-20250514";
+                c.Model = "claude-sonnet-4-20250514";
             });
 
             spectra.AddConsoleEvents();
@@ -152,11 +152,11 @@ var workflow = WorkflowBuilder.Create("summarize")
     .Build();
 
 var state = new WorkflowState();
-state["inputs.text"] = File.ReadAllText(args[0]);
+state.Inputs["text"] = File.ReadAllText(args[0]);
 
 var result = await runner.RunAsync(workflow, state);
 
-Console.WriteLine(result["nodes.summarize.output.response"]);
+Console.WriteLine(result.Nodes["summarize"]);
 
 await host.StopAsync();
 ```

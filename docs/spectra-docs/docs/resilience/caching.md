@@ -136,9 +136,9 @@ Spectra uses `ICacheStore` as the cache abstraction.
 ```csharp
 public interface ICacheStore
 {
-    Task<T?> GetAsync<T>(string key, CancellationToken ct = default) where T : class;
-    Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken ct = default) where T : class;
-    Task RemoveAsync(string key, CancellationToken ct = default);
+    Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class;
+    Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken cancellationToken = default) where T : class;
+    Task RemoveAsync(string key, CancellationToken cancellationToken = default);
 }
 ```
 

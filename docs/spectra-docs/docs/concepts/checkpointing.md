@@ -7,36 +7,46 @@ Spectra workflows can be paused at any point and resumed later. This is essentia
 A **checkpoint** captures the complete workflow state at a specific node:
 
 ```csharp
-public class Checkpoint
+public sealed record Checkpoint
 {
-    public string WorkflowName { get; }
-    public string RunId { get; }
-    public string NodeId { get; }              // Where execution paused
-    public WorkflowState State { get; }        // Full state snapshot
-    public DateTime CreatedAt { get; }
+    public required string RunId { get; init; }
+    public required string WorkflowId { get; init; }
+    public required WorkflowState State { get; init; }
+
+    public string? LastCompletedNodeId { get; init; }
+    public string? NextNodeId { get; init; }
+    public int StepsCompleted { get; init; }
+    public int Index { get; init; }
+    public CheckpointStatus Status { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
 }
 ```
 
-When a step returns `StepStatus.WaitingForHuman` or `StepStatus.Interrupted`, the runner automatically saves a checkpoint and stops execution.
+When a step returns `StepStatus.NeedsContinuation`, `StepStatus.AwaitingInput`, or `StepStatus.Interrupted`, the runner saves a checkpoint and stops execution if the matching checkpoint option is enabled.
 
 ## Enabling Checkpoints
 
 ```csharp
-var result = await runner.RunAsync(workflow, inputs, new CheckpointOptions
+services.AddSpectra(builder =>
 {
-    Store = new FileCheckpointStore("./checkpoints"),
-    SaveAfterEachStep = true  // or only on interrupts
+    builder.AddFileCheckpoints("./checkpoints", opts =>
+    {
+        opts.Frequency = CheckpointFrequency.EveryNode;
+        opts.CheckpointOnInterrupt = true;
+        opts.CheckpointOnAwaitingInput = true;
+        opts.CheckpointOnContinuation = true;
+    });
 });
 ```
 
 ## Resuming a Workflow
 
 ```csharp
-var checkpoint = await store.LoadAsync(runId);
-var result = await runner.ResumeAsync(checkpoint, additionalInputs);
+var result = await runner.ResumeAsync(workflow, runId);
 ```
 
-The runner picks up from the node where execution stopped, with the full state restored.
+The runner restores the full state for that run and continues execution with that checkpoint context.
 
 ## Checkpoint Stores
 
@@ -61,26 +71,36 @@ public interface ICheckpointStore
 {
     Task SaveAsync(Checkpoint checkpoint, CancellationToken ct = default);
     Task<Checkpoint?> LoadAsync(string runId, CancellationToken ct = default);
-    Task<IReadOnlyList<Checkpoint>> ListAsync(string workflowName, CancellationToken ct = default);
+    Task<Checkpoint?> LoadLatestAsync(string workflowId, CancellationToken ct = default);
+    Task<IReadOnlyList<Checkpoint>> ListAsync(string? workflowId = null, CancellationToken ct = default);
+    Task<Checkpoint?> LoadByIndexAsync(string runId, int index, CancellationToken ct = default);
+    Task<IReadOnlyList<Checkpoint>> ListByRunAsync(string runId, CancellationToken ct = default);
+    Task<Checkpoint> ForkAsync(string sourceRunId, int checkpointIndex, string newRunId, WorkflowState? stateOverrides = null, CancellationToken ct = default);
+    Task<IReadOnlyList<Checkpoint>> GetLineageAsync(string runId, CancellationToken ct = default);
     Task DeleteAsync(string runId, CancellationToken ct = default);
+    Task PurgeAsync(string runId, CancellationToken ct = default);
 }
 ```
 
-See [Build Your Own Checkpoint Store](../guides/custom-checkpoint-store.md) for a complete implementation guide.
+See [Build Your Own Checkpoint Store](../guides/build-your-own-checkpoint-store.md) for a complete implementation guide.
 
 ## Time Travel (Fork from Checkpoint)
 
 You can load any historical checkpoint and fork a new execution from that point:
 
 ```csharp
-var checkpoints = await store.ListAsync("my-workflow");
-var oldCheckpoint = checkpoints.First(c => c.NodeId == "analyze");
+var checkpoints = await store.ListByRunAsync("run-abc-123");
+var oldCheckpoint = checkpoints.First(c => c.LastCompletedNodeId == "analyze");
 
 // Fork: resume from "analyze" with different inputs
-var forkedResult = await runner.ResumeAsync(oldCheckpoint, new Dictionary<string, object>
-{
-    ["threshold"] = 0.9  // try a different threshold
-});
+var overrides = new WorkflowState();
+overrides.Inputs["threshold"] = 0.9;  // try a different threshold
+
+var forkedResult = await runner.ForkAndRunAsync(
+    workflow,
+    sourceRunId: "run-abc-123",
+    checkpointIndex: oldCheckpoint.Index,
+    stateOverrides: overrides);
 ```
 
 This creates a new run that diverges from the original execution, useful for experimentation and debugging.

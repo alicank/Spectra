@@ -233,17 +233,30 @@ This is a good pattern when:
 
 ## How variables are resolved
 
-When Spectra renders a prompt, it resolves variables from multiple places.
+When Spectra renders a prompt, it runs two passes.
 
-The sources are merged in this order, with later values winning:
+**Pass 1 — namespaced state paths** (`StateMapper`)
+
+Expressions like `{{inputs.task}}`, `{{context.result}}`, and `{{nodes.fetch.data}}` are resolved directly against `WorkflowState`. These use the dotted-namespace syntax and are handled before any flat variable lookup.
+
+**Pass 2 — bare variable names** (`PromptRenderer`)
+
+After the first pass, any remaining `{{key}}` placeholders are resolved from a flat merged dictionary. Sources are merged in this order, with later values winning:
 
 1. `state.Inputs`
 2. `state.Context`
-3. step `Inputs` except internal `__` keys
+3. step `Inputs` (excluding internal `__` keys)
 
 That means node-level inputs can override broader workflow values when needed.
 
-This makes prompt rendering flexible while still fitting naturally into Spectra's shared-state model.
+A template can freely mix both styles:
+
+```text
+You are working on {{inputs.project}}.   ← namespaced path (pass 1)
+Summarize the following in {{language}}: ← bare key (pass 2)
+
+{{inputs.text}}
+```
 
 ---
 
@@ -273,7 +286,7 @@ That default is helpful during development because unresolved placeholders remai
 
 When you are iterating on prompts, restarting the app after every prompt edit is slow.
 
-Spectra supports hot reload for file-based prompt registries:
+Spectra supports hot reload for file-based prompt registries. Pass `watch: true` when constructing `FilePromptRegistry` directly — `AddPromptsFromDirectory` does not enable watching:
 
 ```csharp
 builder.AddPrompts(new FilePromptRegistry("./prompts", watch: true));

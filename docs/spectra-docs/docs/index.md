@@ -115,7 +115,7 @@ dotnet run
 
 ## Chain steps together
 
-The real power is connecting steps. Each node writes output to `Context` under its id, and later nodes reference it with `{{Context.greet.response}}` in prompt templates.
+The real power is connecting steps. Each node writes output to `Context` under its id, and later nodes reference it with `{{context.greet.response}}` in prompt templates.
 === "C#"
 
     ```csharp
@@ -126,7 +126,7 @@ The real power is connecting steps. Each node writes output to `Context` under i
             .WithUserPrompt("Say hello to {{inputs.name}}.")
             .WithMaxIterations(1))
         .AddAgentNode("translate", "assistant", n => n
-            .WithUserPrompt("Translate to French: {{nodes.greet.output}}")
+            .WithUserPrompt("Translate to French: {{context.greet.response}}")
             .WithMaxIterations(1))
         .AddEdge("greet", "translate")
         .Build();
@@ -152,7 +152,7 @@ The real power is connecting steps. Each node writes output to `Context` under i
           "stepType": "agent",
           "agentId": "assistant",
           "parameters": {
-            "userPrompt": "Translate to French: {{nodes.greet.output}}",
+            "userPrompt": "Translate to French: {{context.greet.response}}",
             "maxIterations": 1
           }
         }
@@ -173,14 +173,44 @@ The real power is connecting steps. Each node writes output to `Context` under i
 
 === "Provider Routing"
 
-    Pick the right model for the step, and define fallbacks when needed.
+    Pick the right model for the step by registering multiple providers and assigning different agents.
 
     ```csharp
-    var workflow = WorkflowBuilder.Create("resilient-agent")
-        .AddAgentNode("draft-email", "writer", n => n
-            .WithPrimaryModel("gpt-4o")
-            .WithFallback("claude-3-5-sonnet")
-            .WithFallback("llama-3-local"))
+    services.AddSpectra(builder =>
+    {
+        builder.AddOpenAi(c =>
+        {
+            c.ApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")!;
+            c.Model = "gpt-4o";
+        });
+
+        builder.AddAnthropic(c =>
+        {
+            c.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!;
+            c.Model = "claude-sonnet-4-20250514";
+        });
+
+        builder.AddOllama(c =>
+        {
+            c.Host = "http://localhost:11434";
+            c.Model = "llama3";
+        });
+    });
+
+    var workflow = WorkflowBuilder.Create("resilient-pipeline")
+        .AddAgent("drafter", "openai", "gpt-4o", a => a
+            .WithSystemPrompt("You draft emails."))
+        .AddAgent("reviewer", "anthropic", "claude-sonnet-4-20250514", a => a
+            .WithSystemPrompt("You review text critically."))
+        .AddAgent("local", "ollama", "llama3", a => a
+            .WithSystemPrompt("You summarize text."))
+        .AddAgentNode("draft", "drafter", n => n
+            .WithUserPrompt("Draft an email about {{inputs.topic}}.")
+            .WithMaxIterations(1))
+        .AddAgentNode("review", "reviewer", n => n
+            .WithUserPrompt("Review this email: {{context.draft.response}}")
+            .WithMaxIterations(1))
+        .AddEdge("draft", "review")
         .Build();
     ```
 
