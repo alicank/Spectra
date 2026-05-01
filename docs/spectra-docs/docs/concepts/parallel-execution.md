@@ -138,7 +138,7 @@ This is easy to reason about and works well for most fan-out flows.
 
 ### Shared-key writes need care
 
-If multiple branches write to the same state key, you need to decide how those values should be combined. The parallel scheduler applies outputs under a lock, so shared-key writes are effectively last-write-wins — acceptable for some cases, but not for result aggregation.
+If multiple branches write to the same state key, you need to decide how those values should be combined. The parallel scheduler applies outputs under a lock, so shared-key writes are effectively last-write-wins â€” acceptable for some cases, but not for result aggregation.
 
 For deterministic merging, have each branch write its own output and combine those values in an explicit fan-in node.
 
