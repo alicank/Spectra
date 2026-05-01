@@ -549,8 +549,11 @@ public class WorkflowRunner : IWorkflowRunner
 
             if (result.Status == StepStatus.AwaitingInput)
             {
+                await ApplyOutputsWithEvents(
+                    workflow, node, state, result.Outputs, cancellationToken);
+
                 finalStatus = CheckpointStatus.AwaitingInput;
-                if (_checkpointOptions.CheckpointOnContinuation)
+                if (_checkpointOptions.CheckpointOnAwaitingInput)
                 {
                     await SaveCheckpointAsync(
                         workflow, state, null, node.Id,
