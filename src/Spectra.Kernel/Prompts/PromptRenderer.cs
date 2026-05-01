@@ -56,6 +56,12 @@ public sealed partial class PromptRenderer
         IReadOnlyDictionary<string, object?> variables,
         out object? result)
     {
+        if (variables.TryGetValue(path, out var direct))
+        {
+            result = direct;
+            return true;
+        }
+
         result = null;
         var segments = path.Split('.');
 
