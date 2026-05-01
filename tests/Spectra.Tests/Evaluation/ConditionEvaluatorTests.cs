@@ -1,4 +1,4 @@
-﻿using Spectra.Contracts.State;
+using Spectra.Contracts.State;
 using Spectra.Kernel.Evaluation;
 using Xunit;
 
@@ -113,5 +113,40 @@ public class ConditionEvaluatorTests
         Assert.True(_evaluator.Evaluate("Context.filename endswith .pdf", state).Satisfied);
         Assert.True(_evaluator.Evaluate("Context.filename startswith document", state).Satisfied);
         Assert.True(_evaluator.Evaluate("Context.filename contains ment", state).Satisfied);
+    }
+
+    [Fact]
+    public void EvaluatesNodesPrefixNumeric()
+    {
+        var state = new WorkflowState();
+        state.Context["countfiles"] = new Dictionary<string, object?>
+        {
+            ["total"] = 3200
+        };
+
+        Assert.True(_evaluator.Evaluate("nodes.countfiles.total < 5000", state).Satisfied);
+        Assert.False(_evaluator.Evaluate("nodes.countfiles.total < 1000", state).Satisfied);
+        Assert.True(_evaluator.Evaluate("nodes.countfiles.total > 3000", state).Satisfied);
+    }
+
+    [Fact]
+    public void EvaluatesNodesPrefixBoolean()
+    {
+        var state = new WorkflowState();
+        state.Context["normalize"] = new Dictionary<string, object?>
+        {
+            ["hasFiles"] = false
+        };
+
+        Assert.True(_evaluator.Evaluate("nodes.normalize.hasFiles == false", state).Satisfied);
+        Assert.False(_evaluator.Evaluate("nodes.normalize.hasFiles == true", state).Satisfied);
+    }
+
+    [Fact]
+    public void EvaluatesNodesPrefixMissingNode()
+    {
+        var state = new WorkflowState();
+
+        Assert.True(_evaluator.Evaluate("nodes.nonexistent.value == null", state).Satisfied);
     }
 }

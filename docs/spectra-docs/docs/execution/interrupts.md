@@ -41,7 +41,7 @@ var workflow = WorkflowBuilder.Create("review-pipeline")
         .WithParameter("userPrompt", "Write a report on {{inputs.topic}}"))
 
     .AddNode("publish", "prompt", node => node
-        .WithInterruptBefore("Review the generated report before publishing")
+        .InterruptBefore("Review the generated report before publishing")
         .WithParameter("userPrompt", "Format for publication: {{nodes.generate.output.response}}"))
 
     .AddEdge("generate", "publish")
@@ -187,7 +187,7 @@ You can register an `IInterruptHandler` to handle them automatically.
 public interface IInterruptHandler
 {
     Task<InterruptResponse> HandleAsync(
-        InterruptRequest request, CancellationToken ct = default);
+        InterruptRequest request, CancellationToken cancellationToken = default);
 }
 ```
 

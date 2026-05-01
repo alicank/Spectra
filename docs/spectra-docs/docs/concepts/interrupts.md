@@ -4,25 +4,25 @@ An **interrupt** pauses workflow execution at any point and waits for external i
 
 ## How Interrupts Work
 
-Any step can request an interrupt by throwing an `InterruptException` or returning `StepStatus.Interrupted`:
+Any step can request an interrupt by calling `context.InterruptAsync(...)`:
 
 ```csharp
 public async Task<StepResult> ExecuteAsync(StepContext context, CancellationToken ct)
 {
     var plan = GenerateDeploymentPlan(context.Inputs);
 
-    // Pause and ask for approval
-    throw new InterruptException(
-        InterruptRequest.Builder()
-            .WithReason("Deployment plan requires approval")
-            .WithData("plan", plan)
-            .WithOptions("approve", "reject", "modify")
-            .Build()
-    );
+    var response = await context.InterruptAsync("Deployment plan requires approval", b => b
+        .WithTitle("Approve Deployment Plan")
+        .WithPayload(new { plan }));
+
+    if (response.Rejected)
+        return StepResult.Fail("Deployment rejected: " + response.Comment);
+
+    return StepResult.Success(new() { ["approved"] = true });
 }
 ```
 
-When an interrupt is thrown:
+When an interrupt is raised:
 
 1. The workflow runner saves a checkpoint
 2. The `InterruptRequest` is surfaced to the caller (API response, CLI prompt, UI)
@@ -31,16 +31,15 @@ When an interrupt is thrown:
 When the caller provides a response:
 
 ```csharp
-var response = new InterruptResponse
-{
-    Status = InterruptStatus.Approved,
-    Data = new Dictionary<string, object> { ["notes"] = "Looks good, ship it" }
-};
-
-var result = await runner.ResumeAsync(runId, response);
+var result = await runner.ResumeWithResponseAsync(
+    workflow,
+    runId: "run-abc",
+    interruptResponse: InterruptResponse.ApprovedResponse(
+        respondedBy: "alice",
+        comment: "Looks good, ship it"));
 ```
 
-The step re-executes with the interrupt response available in its context.
+The step continues from the `context.InterruptAsync(...)` call with the response returned to it.
 
 ## IInterruptHandler
 
@@ -49,33 +48,26 @@ For programmatic interrupt handling (e.g., auto-approval in CI, or routing to a 
 ```csharp
 public interface IInterruptHandler
 {
-    Task<InterruptResponse> HandleAsync(InterruptRequest request, CancellationToken ct);
+    Task<InterruptResponse> HandleAsync(InterruptRequest request, CancellationToken cancellationToken = default);
 }
 ```
 
 Register a handler:
 
 ```csharp
-builder.AddInterruptHandler<SlackApprovalHandler>();
+builder.AddInterruptHandler(new SlackApprovalHandler());
 ```
 
 ## InterruptRequest Builder
 
+The builder is accessed via the `configure` action in `context.InterruptAsync(reason, configure)`:
+
 ```csharp
-var request = InterruptRequest.Builder()
-    .WithReason("Review the generated code before applying")
-    .WithData("files", modifiedFiles)
-    .WithData("diff", diffOutput)
-    .WithOptions("apply", "reject", "edit")
-    .WithTimeout(TimeSpan.FromHours(24))
-    .Build();
+var response = await context.InterruptAsync("Review the generated code before applying", b => b
+    .WithTitle("Code Review Required")
+    .WithDescription("Please review the diff before it is applied")
+    .WithPayload(new { files = modifiedFiles, diff = diffOutput })
+    .WithMetadata("source", "code-gen-step"));
 ```
 
-## Difference from HumanGateStep
-
-The interrupt primitive is more flexible than a dedicated gate step:
-
-- **Interrupts** can be thrown from *any* step, including inside `AgentStep` iterations
-- **HumanGateStep** is a standalone node in the graph — it's a convenience wrapper around the interrupt primitive
-- Use interrupts when you need conditional pausing inside complex step logic
-- Use `HumanGateStep` when you just need a simple approve/reject gate between two nodes
+Available builder methods: `.WithTitle(string)`, `.WithDescription(string)`, `.WithPayload(object?)`, `.WithMetadata(string, object?)`.

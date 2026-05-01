@@ -33,6 +33,12 @@ public class WorkflowState
     public Dictionary<string, object?> Artifacts { get; set; } = [];
 
     /// <summary>
+    /// Node outputs keyed by node ID. Populated unconditionally after each node executes,
+    /// enabling <c>{{nodes.nodeId.field}}</c> template resolution regardless of output mappings.
+    /// </summary>
+    public Dictionary<string, object?> Nodes { get; set; } = [];
+
+    /// <summary>
     /// Accumulated error messages from failed steps.
     /// </summary>
     public List<string> Errors { get; set; } = [];

@@ -113,7 +113,7 @@ Here is a small workflow with two steps:
         { "id": "analyze", "stepType": "Analyze" }
       ],
       "edges": [
-        { "source": "fetch", "target": "analyze" }
+        { "from": "fetch", "to": "analyze" }
       ]
     }
     ```
@@ -197,17 +197,15 @@ That final state contains:
 For example, a workflow might begin with:
 
 ```csharp
-var state = new WorkflowState
-{
-    ["inputs.name"] = "World"
-};
+var state = new WorkflowState();
+state.Inputs["name"] = "World";
 ```
 
 and later produce values such as:
 
 ```text
-nodes.greet.output
-nodes.translate.output
+nodes.greet.response
+nodes.translate.response
 ```
 
 This shared-state model is what allows later nodes to depend on earlier work without tight coupling.
@@ -259,8 +257,8 @@ In Spectra, that branching logic lives on edges.
         { "id": "reject", "stepType": "Reject" }
       ],
       "edges": [
-        { "source": "classify", "target": "approve", "condition": "score >= 0.8" },
-        { "source": "classify", "target": "reject", "condition": "score < 0.8" }
+        { "from": "classify", "to": "approve", "condition": "score >= 0.8" },
+        { "from": "classify", "to": "reject", "condition": "score < 0.8" }
       ]
     }
     ```
@@ -351,6 +349,7 @@ A workflow definition typically includes these parts:
 | `Id`                      | Unique workflow identifier                     |
 | `Name`                    | Human-readable workflow name                   |
 | `Description`             | Optional description                           |
+| `Version`                 | Workflow definition version (defaults to 1)    |
 | `EntryNodeId`             | The node where execution begins                |
 | `Nodes`                   | The nodes in the graph                         |
 | `Edges`                   | The connections between nodes                  |

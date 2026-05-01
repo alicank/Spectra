@@ -1,6 +1,6 @@
 # Subgraphs
 
-A **subgraph** is a nested workflow that runs inside a parent workflow with its own isolated state. Use subgraphs to break complex workflows into reusable, testable modules — each with clear input/output boundaries.
+A **subgraph** is a nested workflow that runs inside a parent workflow with its own isolated state. Use subgraphs to break complex workflows into reusable, testable modules - each with clear input/output boundaries.
 
 **StepType:** `"subgraph"`
 
@@ -10,32 +10,35 @@ A **subgraph** is a nested workflow that runs inside a parent workflow with its 
 
 Large workflows can become hard to reason about. Subgraphs let you:
 
-- **Encapsulate complexity** — A 10-node RAG pipeline becomes a single node in the parent workflow.
-- **Reuse logic** — Define a workflow once, embed it in multiple parents.
-- **Isolate state** — The child workflow cannot accidentally read or overwrite parent state.
-- **Test independently** — Run the child workflow in isolation with mock inputs.
+- **Encapsulate complexity** - A 10-node RAG pipeline becomes a single node in the parent workflow.
+- **Reuse logic** - Define a workflow once, embed it in multiple parents.
+- **Isolate state** - The child workflow cannot accidentally read or overwrite parent state.
+- **Test independently** - Run the child workflow in isolation with mock inputs.
 
 ---
 
 ## How It Works
 
-When the engine reaches a subgraph node, it executes four phases:
+When the engine reaches a subgraph node, it executes these phases:
 
 ```
-1. Input Mapping      Parent state → Child inputs
-                      (parentPath → childKey)
+1. Input Mapping       Parent state -> child inputs
+                       (parentPath -> childKey)
 
 2. Create Child State  Fresh WorkflowState with scoped RunId
-                      (parentRunId::subgraphId)
+                       (parentRunId::subgraphId)
 
-3. Execute Child       Run the child workflow to completion
-                      via IWorkflowRunner.RunAsync
+3. Agent Inheritance   Parent agents are copied into the child workflow
+                       when the child does not already define that agent ID
 
-4. Output Mapping      Child state → Parent step outputs
-                      (childPath → parentKey)
+4. Execute Child       Run the child workflow to completion
+                       via IWorkflowRunner.RunAsync
+
+5. Output Mapping      Child state -> parent step outputs
+                       (childPath -> parentStatePath)
 ```
 
-The parent and child states are completely separate. Data only flows through the explicit mappings you define.
+The parent and child states are separate. Data flows into the child through input mappings or explicit non-internal node inputs, and child results flow back through output mappings.
 
 ---
 
@@ -44,38 +47,36 @@ The parent and child states are completely separate. Data only flows through the
 ### Step 1: Define the Child Workflow
 
 ```csharp
-var ragPipeline = Spectra.Workflow("rag-pipeline")
-    .AddStep("embed", new EmbeddingStep(), inputs: new
-    {
-        text = "{{inputs.query}}"
-    })
-    .AddStep("search", new VectorSearchStep(), inputs: new
-    {
-        embedding = "{{nodes.embed.output.vector}}",
-        topK = "{{inputs.topK}}"
-    })
-    .AddPromptStep("synthesize", agent: "openai", inputs: new
-    {
-        userPrompt = "Answer based on context: {{nodes.search.output.results}}\n\nQuestion: {{inputs.query}}"
-    })
-    .Edge("embed", "search")
-    .Edge("search", "synthesize")
+var ragPipeline = WorkflowBuilder.Create("rag-pipeline")
+    .AddAgent("answerer", "openai", "gpt-4o")
+    .AddNode("embed", "embedding", node => node
+        .WithParameter("text", "{{inputs.query}}"))
+    .AddNode("search", "vector-search", node => node
+        .WithParameter("embedding", "{{context.embed.vector}}")
+        .WithParameter("topK", "{{inputs.topK}}"))
+    .AddNode("synthesize", "prompt", node => node
+        .WithAgent("answerer")
+        .WithParameter("userPrompt",
+            "Answer based on context: {{context.search.results}}\n\nQuestion: {{inputs.query}}"))
+    .AddEdge("embed", "search")
+    .AddEdge("search", "synthesize")
     .Build();
 ```
+
+`embedding` and `vector-search` are example custom step types; they must be registered in the step registry for the workflow to run.
 
 ### Step 2: Embed It in a Parent Workflow
 
 ```csharp
-var parent = Spectra.Workflow("customer-support")
-    .AddStep("classify", new ClassifyStep(), inputs: new
-    {
-        text = "{{inputs.message}}"
-    })
-    .AddSubgraph("lookup", ragPipeline, subgraph => subgraph
-        .MapInput("inputs.message", "query")       // parent path → child key
+var parent = WorkflowBuilder.Create("customer-support")
+    .AddNode("classify", "classify", node => node
+        .WithParameter("text", "{{inputs.message}}"))
+    .AddSubgraph("rag-pipeline", ragPipeline, subgraph => subgraph
+        .MapInput("inputs.message", "query")
         .MapInput("inputs.topResults", "topK")
-        .MapOutput("nodes.synthesize.output.response", "answer"))  // child path → parent key
-    .Edge("classify", "lookup")
+        .MapOutput("context.synthesize.response", "context.answer"))
+    .AddSubgraphNode("lookup", "rag-pipeline")
+    .AddEdge("classify", "lookup")
     .Build();
 ```
 
@@ -87,7 +88,7 @@ var parent = Spectra.Workflow("customer-support")
     {
       "id": "lookup",
       "stepType": "subgraph",
-      "inputs": { "__subgraphId": "rag-pipeline" }
+      "subgraphId": "rag-pipeline"
     }
   ],
   "subgraphs": [
@@ -98,9 +99,9 @@ var parent = Spectra.Workflow("customer-support")
         "inputs.topResults": "topK"
       },
       "outputMappings": {
-        "nodes.synthesize.output.response": "answer"
+        "context.synthesize.response": "context.answer"
       },
-      "workflow": { ... }
+      "workflow": { }
     }
   ]
 }
@@ -115,45 +116,45 @@ var parent = Spectra.Workflow("customer-support")
 Input mappings copy values from the **parent state** into the **child's inputs**:
 
 ```
-Parent Path                    →  Child Input Key
-─────────────────────────────────────────────────
-inputs.message                 →  query
-inputs.topResults              →  topK
-nodes.classify.output.category →  category
-context.userId                 →  userId
+Parent Path                    ->  Child Input Key
+--------------------------------------------------
+inputs.message                 ->  query
+inputs.topResults              ->  topK
+nodes.classify.category        ->  category
+context.userId                 ->  userId
 ```
 
-The parent path is resolved using `StateMapper.GetValueFromPath`, which navigates the parent's `WorkflowState` tree (inputs, nodes, context, artifacts).
+The parent path is resolved using `StateMapper.GetValueFromPath`, which navigates the parent's `WorkflowState` tree (`inputs`, `nodes`, `context`, `artifacts`). Path roots are case-insensitive; dictionary keys after the root must match the stored key.
+
+Any inputs on the subgraph node that don't start with `__` are also forwarded to the child state's inputs, unless an input mapping already defines that key.
 
 ### Output Mappings
 
-Output mappings copy values from the **child state** into the parent step's **outputs**:
+Output mappings copy values from the **child state** into the parent step's outputs. The workflow runner then applies those outputs to the parent state path:
 
 ```
-Child Path                          →  Parent Output Key
-───────────────────────────────────────────────────────
-nodes.synthesize.output.response    →  answer
-nodes.search.output.resultCount     →  totalResults
+Child Path                       ->  Parent State Path
+-----------------------------------------------------
+context.synthesize.response      ->  context.answer
+artifacts.search.resultCount     ->  context.totalResults
 ```
 
-These outputs are then available to other parent nodes via `{{nodes.lookup.output.answer}}`.
+These mapped values are then available to other parent nodes via their state paths, for example `{{context.answer}}`.
 
 ### Default Behavior (No Output Mappings)
 
-If you don't define any output mappings, the subgraph exposes the child's full `Context` and `Artifacts` dictionaries:
+If you don't define any output mappings, the subgraph exposes the child's full `Context` and `Artifacts` dictionaries as step outputs:
 
 ```csharp
 // In downstream parent nodes:
-// {{nodes.lookup.output.childContext}}
-// {{nodes.lookup.output.childArtifacts}}
+// {{nodes.lookup.childContext}}
+// {{nodes.lookup.childArtifacts}}
 ```
+
+The runner also maps those default outputs to `context.childContext` and `context.childArtifacts` for the subgraph node.
 
 !!! tip "Be Explicit"
     Always define output mappings for production workflows. Exposing the entire child state is useful for debugging but creates tight coupling.
-
-### Forwarding Inputs
-
-Any inputs on the subgraph node that don't start with `__` are automatically forwarded to the child state's inputs — unless an input mapping already defines that key. This is convenient for passing simple values without explicit mappings.
 
 ---
 
@@ -163,15 +164,15 @@ If the child workflow produces errors, the subgraph step fails:
 
 ```
 Child completes with errors
-  → SubgraphStep returns StepResult.Fail
-  → Error message: "Subgraph 'rag-pipeline' completed with errors: ..."
-  → All child errors are joined with "; "
+  -> SubgraphStep returns StepResult.Fail
+  -> Error message: "Subgraph 'rag-pipeline' completed with errors: ..."
+  -> All child errors are joined with "; "
 ```
 
 If the child workflow throws an exception (unhandled crash), the subgraph step also fails with the exception details.
 
 !!! note
-    Child workflow errors don't automatically trigger the parent's error handling. The subgraph node is simply marked as failed, and the parent's edge evaluation proceeds normally — you can add conditional edges to handle the failure case.
+    Child workflow errors are reported as a failed subgraph step. The parent run records the failure; add conditional edges or failure handling around the subgraph node if you want a recovery path.
 
 ---
 
@@ -184,7 +185,7 @@ Parent RunId:  run-abc-123
 Child RunId:   run-abc-123::rag-pipeline
 ```
 
-This makes it easy to trace parent-child relationships in logs and the event sink. The `CorrelationId` is set to the parent's `RunId`.
+This makes it easy to trace parent-child relationships in logs and the event sink. The child state's `CorrelationId` is set to the parent's `RunId`.
 
 ---
 
@@ -193,7 +194,8 @@ This makes it easy to trace parent-child relationships in logs and the event sin
 Subgraphs can contain other subgraphs. There's no hard depth limit, but keep in mind:
 
 - Each level adds a `::subgraphId` segment to the `RunId`.
-- State is isolated at every level — data must flow through explicit mappings.
+- State is isolated at every level - data must flow through explicit mappings or forwarded node inputs.
+- Parent workflow agents are inherited when the child does not define an agent with the same ID.
 - Debugging deeply nested workflows is harder. Consider flattening when nesting exceeds 2-3 levels.
 
 ---
@@ -202,27 +204,31 @@ Subgraphs can contain other subgraphs. There's no hard depth limit, but keep in 
 
 ### RAG Pipeline
 
-Encapsulate retrieval-augmented generation (embedding → search → synthesis) as a reusable subgraph that any workflow can embed.
+Encapsulate retrieval-augmented generation (embedding -> search -> synthesis) as a reusable subgraph that any workflow can embed.
 
 ### Multi-Stage Processing
 
-Break a complex pipeline (ingest → validate → transform → enrich → store) into stages, each as a subgraph with clear boundaries.
+Break a complex pipeline (ingest -> validate -> transform -> enrich -> store) into stages, each as a subgraph with clear boundaries.
 
 ### A/B Testing
 
 Run two different subgraph implementations and compare outputs:
 
 ```csharp
-parent
-    .AddSubgraph("model-a", pipelineV1, ...)
-    .AddSubgraph("model-b", pipelineV2, ...)
-    .AddStep("compare", new CompareStep(), inputs: new
-    {
-        resultA = "{{nodes.model-a.output.answer}}",
-        resultB = "{{nodes.model-b.output.answer}}"
-    })
-    .Edge("model-a", "compare")
-    .Edge("model-b", "compare")
+var parent = WorkflowBuilder.Create("ab-test")
+    .AddSubgraph("model-a", pipelineV1, sg => sg
+        .MapOutput("context.answer", "context.resultA"))
+    .AddSubgraph("model-b", pipelineV2, sg => sg
+        .MapOutput("context.answer", "context.resultB"))
+    .AddSubgraphNode("run-a", "model-a")
+    .AddSubgraphNode("run-b", "model-b")
+    .AddNode("compare", "compare", node => node
+        .WaitForAll()
+        .WithParameter("resultA", "{{context.resultA}}")
+        .WithParameter("resultB", "{{context.resultB}}"))
+    .AddEdge("run-a", "compare")
+    .AddEdge("run-b", "compare")
+    .Build();
 ```
 
 ### Isolation for Testing

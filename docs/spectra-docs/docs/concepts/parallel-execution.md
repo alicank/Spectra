@@ -4,9 +4,9 @@ description: "Run independent workflow branches concurrently in Spectra using fa
 
 # Parallel Execution
 
-Spectra can run independent workflow branches in parallel.
+Spectra can run independent workflow branches in parallel through `ParallelScheduler`.
 
-When one node unlocks multiple downstream branches, the runtime can execute those branches concurrently without extra annotations on the edges. You define the graph. Spectra derives the available parallelism from that graph.
+When one node unlocks multiple downstream branches, the parallel scheduler can execute those branches concurrently without extra annotations on the edges. You define the graph. Spectra derives the available parallelism from that graph.
 
 This is especially useful for workloads like:
 
@@ -76,10 +76,10 @@ var workflow = WorkflowBuilder.Create("parallel-analysis")
     { "id": "merge",     "stepType": "MergeResults", "waitForAll": true }
   ],
   "edges": [
-    { "source": "fetch",     "target": "sentiment" },
-    { "source": "fetch",     "target": "entities"  },
-    { "source": "sentiment", "target": "merge"     },
-    { "source": "entities",  "target": "merge"     }
+    { "from": "fetch",     "to": "sentiment" },
+    { "from": "fetch",     "to": "entities"  },
+    { "from": "sentiment", "to": "merge"     },
+    { "from": "entities",  "to": "merge"     }
   ]
 }
 ```
@@ -117,7 +117,7 @@ Parallel execution happens when multiple nodes are ready at the same time and do
 - separate branches are both ready after earlier work completes
 - no edge forces one branch to wait for another
 
-In other words, parallelism comes from the graph structure itself. You do not mark edges as "parallel." You model independent work, and the runtime schedules it accordingly.
+In other words, parallelism comes from the graph structure itself. You do not mark edges as "parallel." You model independent work, and execute the workflow with `ParallelScheduler`.
 
 ---
 
@@ -136,32 +136,25 @@ nodes.entities.output
 
 This is easy to reason about and works well for most fan-out flows.
 
-### Shared-key writes need a merge strategy
+### Shared-key writes need care
 
-If multiple branches write to the same state key, you need to decide how those values should be combined. Without a reducer, the default behavior is last-write-wins â€” acceptable for some cases, but not for result aggregation.
+If multiple branches write to the same state key, you need to decide how those values should be combined. The parallel scheduler applies outputs under a lock, so shared-key writes are effectively last-write-wins — acceptable for some cases, but not for result aggregation.
 
-For deterministic merging, register a state reducer:
+For deterministic merging, have each branch write its own output and combine those values in an explicit fan-in node.
 
-```csharp
-services.AddSpectra(builder =>
-{
-    builder.AddStateReducer("results", new AppendListReducer());
-});
-```
-
-Reducers are especially important when parallel branches all contribute to the same collection, score, or aggregate object. See [State](state.md) for reducer design and state merge behavior.
+State reducer registration exists in Spectra, but `ParallelScheduler` does not apply reducers when writing branch outputs today.
 
 ---
 
 ## Tuning concurrency
 
-You can control how much parallel work Spectra allows at once with `MaxConcurrency`:
+You can control how much parallel work `ParallelScheduler` allows at once with its `maxConcurrency` constructor argument:
 
 ```csharp
-var workflow = WorkflowBuilder.Create("high-concurrency")
-    .WithMaxConcurrency(8)
-    // ...
-    .Build();
+var scheduler = new ParallelScheduler(
+    stepRegistry,
+    eventSink: eventSink,
+    maxConcurrency: 8);
 ```
 
 Choose a limit based on the kind of work your nodes are doing:

@@ -50,7 +50,7 @@ Add Spectra's activity source to your OpenTelemetry tracing configuration:
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource(SpectraActivitySource.SourceName)
+        .AddSource(SpectraActivitySource.Name)
         .AddConsoleExporter()
     );
 ```

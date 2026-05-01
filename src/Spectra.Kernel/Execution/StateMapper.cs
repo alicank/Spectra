@@ -13,7 +13,7 @@ public class StateMapper : IStateMapper
     // This prevents matching JSX expressions like {{ opacity: 0, y: -10 }}
     // or style={{ width: "100%" }} which contain spaces, colons, quotes, etc.
     private static readonly Regex TemplateRegex = new(
-        @"\{\{\s*([\w]+(?:\.[\w]+)*)\s*\}\}",
+        @"\{\{\s*([\w][\w\-]*(?:\.[\w][\w\-]*)*)\s*\}\}",
         RegexOptions.Compiled);
 
     /// <summary>
@@ -22,7 +22,7 @@ public class StateMapper : IStateMapper
     /// </summary>
     private static readonly HashSet<string> ValidPathRoots = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Inputs", "Context", "Artifacts"
+        "inputs", "context", "artifacts", "nodes"
     };
 
     /// <inheritdoc />
@@ -76,6 +76,7 @@ public class StateMapper : IStateMapper
     /// Inputs.repoPath
     /// Context.list.files
     /// Artifacts.GeneratedFiles
+    /// Nodes.flat-render.tree
     /// </summary>
     public static object? GetValueFromPath(WorkflowState state, string path)
     {
@@ -89,10 +90,11 @@ public class StateMapper : IStateMapper
             "inputs" => state.Inputs,
             "context" => state.Context,
             "artifacts" => state.Artifacts,
+            "nodes" => state.Nodes,
             _ => null
         };
 
-        // If the caller gave just "Inputs"/"Context"/"Artifacts"
+        // If the caller gave just "Inputs"/"Context"/"Artifacts"/"Nodes"
         if (parts.Length == 1) return current;
 
         for (int i = 1; i < parts.Length; i++)
@@ -136,6 +138,7 @@ public class StateMapper : IStateMapper
             "inputs" => state.Inputs,
             "context" => state.Context,
             "artifacts" => state.Artifacts,
+            "nodes" => state.Nodes,
             _ => state.Context
         };
 
@@ -223,7 +226,13 @@ public class StateMapper : IStateMapper
         return value;
     }
 
-    private static object? RenderString(string template, WorkflowState state)
+    /// <summary>
+    /// Renders a template string against the workflow state, resolving namespaced
+    /// paths such as <c>{{inputs.request}}</c> or <c>{{nodes.flat-render.tree}}</c>.
+    /// Returns the raw object when the template is an exact single-path reference;
+    /// otherwise returns a string with all tokens substituted.
+    /// </summary>
+    public static object? RenderString(string template, WorkflowState state)
     {
         // If it's exactly "{{ path }}" -> return the *raw object* (preserve type)
         var trimmed = template.Trim();

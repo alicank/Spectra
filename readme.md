@@ -1,27 +1,16 @@
-<p align="center">
-  <img src="icon.png" alt="Spectra" width="120" />
-</p>
+![Spectra](icon.png)
 
-<h1 align="center">Spectra</h1>
+# Spectra
 
-<p align="center">
-  AI workflow orchestration for .NET.<br/>
-  Build workflows as graphs, mix code and agent steps, swap providers without changing the flow.
-</p>
+**AI workflow orchestration for .NET.**
+Build workflows as graphs, mix code and agent steps, swap providers without changing the flow.
 
-<p align="center">
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-10-512BD4.svg" alt=".NET 10" /></a>
-  <a href="https://www.nuget.org/packages/Spectra"><img src="https://img.shields.io/nuget/v/Spectra?label=NuGet&color=004880" alt="NuGet" /></a>
-  <a href="https://www.nuget.org/packages/Spectra"><img src="https://img.shields.io/nuget/dt/Spectra?label=Downloads&color=green" alt="NuGet Downloads" /></a>
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com/)
+[![NuGet](https://img.shields.io/nuget/v/Spectra?label=NuGet&color=004880)](https://www.nuget.org/packages/Spectra)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Spectra?label=Downloads&color=green)](https://www.nuget.org/packages/Spectra)
 
-<p align="center">
-  <a href="https://alicank.github.io/Spectra/">Documentation</a> ·
-  <a href="https://alicank.github.io/Spectra/getting-started/">Getting Started</a> ·
-  <a href="#samples">Samples</a> ·
-  <a href="https://www.nuget.org/packages/Spectra">NuGet</a>
-</p>
+[Documentation](https://alicank.github.io/Spectra/) · [Getting Started](https://alicank.github.io/Spectra/getting-started/) · [Samples](#samples) · [NuGet](https://www.nuget.org/packages/Spectra)
 
 ---
 
@@ -75,7 +64,7 @@ Nodes do work. Edges define flow. State moves through the graph.
 
 > **Using a different provider?** Replace `AddOpenRouter(...)` with `AddOpenAI(...)`, `AddAnthropic(...)`, `AddGemini(...)`, or `AddOllama(...)`. The workflow definition stays the same.
 
-[**Read the full getting-started guide →**](https://specticai.com/spectra/getting-started/)
+[**Read the full getting-started guide →**](https://alicank.github.io/Spectra/getting-started/)
 
 ---
 
@@ -95,7 +84,7 @@ Nodes do work. Edges define flow. State moves through the graph.
 
 - **Graph-based orchestration** — directed graphs with conditional edges, parallel fan-out, and cyclic loops with guard rails
 - **Multi-provider** — OpenAI, Anthropic, Gemini, Ollama, OpenRouter, and any OpenAI-compatible API
-- **Agent step** — autonomous tool-using agents with iteration limits and cost tracking
+- **Agent step** — autonomous tool-using agents with iteration limits and cost tracking *(coming soon)*
 - **Multi-agent** — supervisor, handoff, and delegation patterns
 - **MCP integration** — connect agents to MCP tool servers over stdio or SSE
 - **Checkpointing** — pause and resume workflows from any node
@@ -152,14 +141,14 @@ Most projects need `Spectra` + `Spectra.Extensions`. The rest are for advanced s
 
 ## Documentation
 
-Full documentation at [**specticai.com/spectra**](https://specticai.com/spectra/).
+Full documentation at [**alicank.github.io/Spectra**](https://alicank.github.io/Spectra/).
 
-- [Getting Started](https://specticai.com/spectra/getting-started/) — install to running workflow in 60 seconds
-- [Workflows & Graphs](https://specticai.com/spectra/concepts/workflows/) — nodes, edges, state, branching, loops
-- [LLM Providers](https://specticai.com/spectra/llm/providers/) — setup for each provider
-- [Agent Step](https://specticai.com/spectra/llm/agent-step/) — autonomous tool-using agents
-- [Multi-Agent Patterns](https://specticai.com/spectra/multi-agent/overview/) — supervisor, handoff, delegation
-- [Architecture](https://specticai.com/spectra/architecture/) — package structure, execution flow, extension points
+- [Getting Started](https://alicank.github.io/Spectra/getting-started/) — install to running workflow in 60 seconds
+- [Workflows & Graphs](https://alicank.github.io/Spectra/concepts/workflows/) — nodes, edges, state, branching, loops
+- [LLM Providers](https://alicank.github.io/Spectra/llm/providers/) — setup for each provider
+- [Agent Step](https://alicank.github.io/Spectra/llm/agent-step/) — autonomous tool-using agents
+- [Multi-Agent Patterns](https://alicank.github.io/Spectra/multi-agent/overview/) — supervisor, handoff, delegation
+- [Architecture](https://alicank.github.io/Spectra/architecture/) — package structure, execution flow, extension points
 
 ---
 
@@ -168,7 +157,7 @@ Full documentation at [**specticai.com/spectra**](https://specticai.com/spectra/
 Contributions are welcome. Please open an issue first to discuss what you'd like to change.
 
 ```bash
-git clone https://github.com/specticai/spectra.git
+git clone https://github.com/alicank/spectra.git
 cd spectra
 dotnet build
 dotnet test

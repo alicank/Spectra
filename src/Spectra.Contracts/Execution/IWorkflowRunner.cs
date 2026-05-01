@@ -67,4 +67,14 @@ public interface IWorkflowRunner
         WorkflowState? initialState,
         RunContext runContext,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a user message to a workflow that is awaiting input (e.g. a session step).
+    /// Requires a checkpoint store to be configured.
+    /// </summary>
+    Task<WorkflowState> SendMessageAsync(
+        WorkflowDefinition workflow,
+        string runId,
+        string userMessage,
+        CancellationToken cancellationToken = default);
 }

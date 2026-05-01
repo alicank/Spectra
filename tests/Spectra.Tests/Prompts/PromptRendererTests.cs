@@ -113,4 +113,101 @@ public class PromptRendererTests
 
         Assert.Equal("A and A again", result);
     }
+
+    [Fact]
+    public void Substitutes_dotted_path_variable()
+    {
+        var result = _renderer.Render(
+            "Map: {{nodes.flat-render.tree}}",
+            new Dictionary<string, object?> { ["nodes.flat-render.tree"] = "file1.cs" });
+
+        Assert.Equal("Map: file1.cs", result);
+    }
+
+    [Fact]
+    public void Substitutes_dotted_inputs_variable()
+    {
+        var result = _renderer.Render(
+            "Mission: {{inputs.request}}",
+            new Dictionary<string, object?> { ["inputs.request"] = "fix the bug" });
+
+        Assert.Equal("Mission: fix the bug", result);
+    }
+
+    [Fact]
+    public void Substitutes_variable_with_colon_separator()
+    {
+        var result = _renderer.Render(
+            "Value: {{config:timeout}}",
+            new Dictionary<string, object?> { ["config:timeout"] = "30s" });
+
+        Assert.Equal("Value: 30s", result);
+    }
+
+    [Fact]
+    public void Trims_whitespace_inside_braces()
+    {
+        var result = _renderer.Render(
+            "Hello {{ name }}!",
+            new Dictionary<string, object?> { ["name"] = "World" });
+
+        Assert.Equal("Hello World!", result);
+    }
+
+    [Fact]
+    public void Trims_whitespace_with_dotted_key()
+    {
+        var result = _renderer.Render(
+            "{{ nodes.flat-render.tree }}",
+            new Dictionary<string, object?> { ["nodes.flat-render.tree"] = "output" });
+
+        Assert.Equal("output", result);
+    }
+
+    [Fact]
+    public void Empty_braces_are_not_matched()
+    {
+        var result = _renderer.Render(
+            "Nothing {{}} here",
+            new Dictionary<string, object?>());
+
+        Assert.Equal("Nothing {{}} here", result);
+    }
+
+    [Fact]
+    public void Whitespace_only_braces_are_not_matched()
+    {
+        var result = _renderer.Render(
+            "Nothing {{  }} here",
+            new Dictionary<string, object?>());
+
+        Assert.Equal("Nothing {{  }} here", result);
+    }
+
+    [Fact]
+    public void Missing_dotted_key_leaves_placeholder_by_default()
+    {
+        var result = _renderer.Render(
+            "Val: {{nodes.unknown.field}}",
+            new Dictionary<string, object?>());
+
+        Assert.Equal("Val: {{nodes.unknown.field}}", result);
+    }
+
+    [Fact]
+    public void Missing_dotted_key_throws_when_configured()
+    {
+        var options = new PromptRenderOptions
+        {
+            MissingVariableBehavior = MissingVariableBehavior.ThrowException
+        };
+
+        var ex = Assert.Throws<KeyNotFoundException>(() =>
+            _renderer.Render(
+                "{{nodes.flat-render.tree}}",
+                new Dictionary<string, object?>(),
+                options));
+
+        Assert.Contains("nodes.flat-render.tree", ex.Message);
+    }
 }

@@ -149,7 +149,7 @@ services.AddSpectra(builder =>
 You can also decorate tools and scan assemblies at startup.
 
 ```csharp
-[SpectraTool("search_docs", "Search the documentation for a query")]
+[SpectraTool]
 public class SearchDocsTool : ITool
 {
     // ...

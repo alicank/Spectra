@@ -496,5 +496,52 @@ public class PromptStepTests
         Assert.NotNull(result.Exception);
     }
 
+    // ── Integration: namespaced template rendering ────────────────
 
+    [Fact]
+    public async Task Prompt_template_with_inputs_reference_renders_correctly()
+    {
+        var (step, client) = SetupWithAgent();
+        var state = new WorkflowState { WorkflowId = "wf-1" };
+        state.Inputs["request"] = "Summarize the codebase";
+
+        var ctx = CreateContext(
+            new()
+            {
+                ["agentId"] = "agent-1",
+                ["userPrompt"] = "Please do: {{inputs.request}}"
+            },
+            state: state);
+
+        await step.ExecuteAsync(ctx);
+
+        Assert.NotNull(client.ReceivedRequest);
+        var userMsg = client.ReceivedRequest!.Messages[0];
+        Assert.Equal("Please do: Summarize the codebase", userMsg.Content);
+    }
+
+    [Fact]
+    public async Task Prompt_template_with_nodes_reference_renders_correctly()
+    {
+        var (step, client) = SetupWithAgent();
+        var state = new WorkflowState { WorkflowId = "wf-1" };
+        state.Nodes["flat-render"] = new Dictionary<string, object?>
+        {
+            ["tree"] = "rendered-tree-content"
+        };
+
+        var ctx = CreateContext(
+            new()
+            {
+                ["agentId"] = "agent-1",
+                ["userPrompt"] = "Use this tree: {{nodes.flat-render.tree}}"
+            },
+            state: state);
+
+        await step.ExecuteAsync(ctx);
+
+        Assert.NotNull(client.ReceivedRequest);
+        var userMsg = client.ReceivedRequest!.Messages[0];
+        Assert.Equal("Use this tree: rendered-tree-content", userMsg.Content);
+    }
 }

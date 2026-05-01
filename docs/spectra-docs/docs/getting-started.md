@@ -205,7 +205,7 @@ What matters is:
 
 - the `greet` node runs
 - its output is written to workflow state
-- you read it back from `nodes.greet.output`
+- you read it back from `context.greet.output`
 
 ---
 
@@ -227,7 +227,7 @@ var workflow = WorkflowBuilder.Create("greet-and-translate")
         .WithUserPrompt("Say hello to {{inputs.name}}. Reply with just the greeting.")
         .WithMaxIterations(1))
     .AddAgentNode("translate", "assistant", node => node
-        .WithUserPrompt("Translate to French: {{nodes.greet.output}}")
+        .WithUserPrompt("Translate to French: {{context.greet.response}}")
         .WithMaxIterations(1))
     .AddEdge("greet", "translate")
     .Build();
@@ -236,7 +236,7 @@ var workflow = WorkflowBuilder.Create("greet-and-translate")
 The key expression is:
 
 ```text
-{{nodes.greet.output}}
+{{context.greet.response}}
 ```
 
 That value comes from the first node's output.
@@ -285,7 +285,7 @@ Make sure you registered the same provider name you use in the workflow:
 Make sure you read the node output using the correct node id:
 
 ```csharp
-result["nodes.greet.output"]
+result["context.greet.response"]
 ```
 
 ---

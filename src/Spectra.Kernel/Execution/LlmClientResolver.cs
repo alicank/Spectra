@@ -223,9 +223,18 @@ internal static class LlmClientResolver
 
     /// <summary>
     /// Renders a template string against the current workflow state and step inputs.
+    /// First resolves namespaced paths (e.g. <c>{{inputs.request}}</c>, <c>{{nodes.X.Y}}</c>)
+    /// via <see cref="StateMapper.RenderString"/>, then resolves any remaining bare-key
+    /// placeholders (e.g. <c>{{fileName}}</c>) via <see cref="PromptRenderer"/>.
     /// </summary>
     internal static string RenderTemplate(string template, StepContext context, PromptRenderer promptRenderer)
     {
+        // First pass: resolve namespaced state paths (inputs.X, context.X, nodes.X.Y, etc.)
+        var resolved = StateMapper.RenderString(template, context.State);
+        var intermediate = resolved?.ToString() ?? template;
+
+        // Second pass: resolve bare variable names from the flat dictionary
+        // (e.g. {{fileName}} from Context["fileName"] or step inputs)
         var variables = new Dictionary<string, object?>();
 
         foreach (var (key, value) in context.State.Inputs)
@@ -240,7 +249,7 @@ internal static class LlmClientResolver
                 variables[key] = value;
         }
 
-        return promptRenderer.Render(template, variables);
+        return promptRenderer.Render(intermediate, variables);
     }
 
     internal static string? GetStringInput(StepContext context, string key)

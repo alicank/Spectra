@@ -59,11 +59,11 @@ await foreach (var evt in runner.StreamAsync(workflow, StreamMode.Tokens, state,
 
 | Mode | Includes | Best for |
 | --- | --- | --- |
-| `Tokens` | All events, including token deltas | Live LLM output |
-| `Messages` | All events except token deltas | Step-level progress without token noise |
-| `Updates` | Step completion, state changes, workflow completion, interrupts | Progress views and dashboards |
-| `Values` | State changes and workflow completion only | Reactive state consumers |
-| `Custom` | Full stream, filter it yourself | Advanced consumers |
+| `Tokens` | Every event, including token deltas | Live LLM output |
+| `Messages` | Every event except `TokenStreamEvent` | Step-level progress without token noise |
+| `Updates` | `StepCompletedEvent`, `StateChangedEvent`, `WorkflowCompletedEvent`, `StepInterruptedEvent` | Progress views and dashboards |
+| `Values` | `StateChangedEvent`, `WorkflowCompletedEvent` | Reactive state consumers |
+| `Custom` | Every event (same as `Tokens`) — filter downstream yourself | Advanced consumers |
 
 Use the narrowest mode that matches your UI or integration.
 
@@ -78,7 +78,8 @@ Each token chunk is emitted as a `TokenStreamEvent`.
 | Field | Description |
 | --- | --- |
 | `Token` | The emitted text chunk |
-| `TokenIndex` | Position of the chunk within the current output |
+| `TokenIndex` | Zero-based position of the chunk within the current node's stream (resets per node) |
+| `IsComplete` | `true` on the final token for the current node's stream |
 
 ### Which steps support token streaming
 
@@ -88,9 +89,7 @@ Token streaming is supported by:
 - `AgentStep`
 - `SessionStep`
 
-For `AgentStep` and `SessionStep`, only the **final response** is streamed.
-
-Tool-calling iterations are not streamed token-by-token because they must be fully parsed first.
+For `AgentStep` and `SessionStep`, streaming fires on iterations where **no tools are in the request**. When tools are present (i.e. the agent is mid-loop calling tools), the LLM response must be fully parsed before tool calls can be dispatched, so those iterations are not streamed token-by-token. In practice, a tool-using agent streams its final natural-language response once it stops calling tools.
 
 ---
 
@@ -131,11 +130,13 @@ For advanced event consumption, Spectra also provides `IEventStream`.
 ```csharp
 public interface IEventStream
 {
-    IAsyncEnumerable<TEvent> SubscribeAsync<TEvent>(CancellationToken ct = default)
+    IAsyncEnumerable<TEvent> SubscribeAsync<TEvent>(
+        CancellationToken cancellationToken = default)
         where TEvent : WorkflowEvent;
 
     IAsyncEnumerable<WorkflowEvent> SubscribeAllAsync(
-        StreamMode mode = StreamMode.Updates, CancellationToken ct = default);
+        StreamMode mode = StreamMode.Updates,
+        CancellationToken cancellationToken = default);
 }
 ```
 

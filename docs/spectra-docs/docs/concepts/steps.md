@@ -6,7 +6,7 @@ description: "Understand steps in Spectra. Learn the IStep contract, what StepCo
 
 A step is the unit of work that runs inside a workflow node.
 
-When Spectra reaches a node during execution, it runs the step inside that node, collects the result, writes outputs into state, and then decides what should happen next.
+When Spectra reaches a node during execution, it runs the step inside that node, collects the result, writes outputs into state when appropriate, and then decides what should happen next.
 
 A step can do almost anything, including:
 
@@ -46,10 +46,10 @@ public interface IStep
 }
 ```
 
-| Member         | Purpose                                                            |
-| -------------- | ------------------------------------------------------------------ |
-| `StepType`     | String identifier used for registration, lookup, and serialization |
-| `ExecuteAsync` | Runs the step and returns a `StepResult`                           |
+| Member | Purpose |
+| --- | --- |
+| `StepType` | String identifier used for registration, lookup, and serialization |
+| `ExecuteAsync` | Runs the step and returns a `StepResult` |
 
 The runtime behavior comes from the context you receive and the result you return.
 
@@ -61,52 +61,52 @@ When Spectra executes a step, it passes a `StepContext` containing everything th
 
 ### Identity
 
-| Property     | Description                            |
-| ------------ | -------------------------------------- |
-| `RunId`      | Unique ID for the current workflow run |
-| `WorkflowId` | The workflow being executed            |
-| `NodeId`     | The specific node running this step    |
+| Property | Description |
+| --- | --- |
+| `RunId` | Unique ID for the current workflow run |
+| `WorkflowId` | The workflow being executed |
+| `NodeId` | The specific node running this step |
 
 ### Data
 
-| Property | Description                                 |
-| -------- | ------------------------------------------- |
-| `Inputs` | Resolved input values for the step          |
-| `State`  | The full workflow state for the current run |
+| Property | Description |
+| --- | --- |
+| `Inputs` | Resolved input values for the step |
+| `State` | The full workflow state for the current run |
 
 By the time your step receives `Inputs`, template expressions have already been resolved. If a node input contains `{{nodes.fetch.output}}`, your step sees the actual resolved value, not the expression.
 
 ### Services and execution context
 
-| Property             | Description                                                  |
-| -------------------- | ------------------------------------------------------------ |
-| `Services`           | Access to the DI container                                   |
-| `RunContext`         | Caller metadata such as tenant, user, or custom run metadata |
-| `WorkflowDefinition` | The current workflow definition when available               |
-| `Memory`             | Optional long-term memory store                              |
+| Property | Description |
+| --- | --- |
+| `Services` | Access to the DI container |
+| `RunContext` | Caller metadata such as tenant, user, roles, claims, and custom run metadata |
+| `WorkflowDefinition` | The current workflow definition when available |
+| `Memory` | Optional long-term memory store |
 
 ### Execution mode
 
-| Property            | Description                                       |
-| ------------------- | ------------------------------------------------- |
+| Property | Description |
+| --- | --- |
 | `CancellationToken` | Signals cancellation and should always be honored |
-| `OnToken`           | Callback for streaming token chunks               |
-| `IsStreaming`       | Indicates whether streaming is active             |
+| `OnToken` | Callback for streaming token chunks |
+| `IsStreaming` | Indicates whether streaming is active |
 
 ### Control flow
 
-| Property              | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `Interrupt`           | Low-level interrupt hook                    |
+| Property | Description |
+| --- | --- |
+| `Interrupt` | Low-level interrupt hook |
 | `InterruptAsync(...)` | Pause execution and wait for external input |
 
 ### Observability
 
-| Property          | Description                                                     |
-| ----------------- | --------------------------------------------------------------- |
+| Property | Description |
+| --- | --- |
 | `TracingActivity` | The current tracing activity for custom tags, spans, and events |
 
-A step does not need to know about the whole engine — it gets a focused execution context and returns a focused result.
+A step does not need to know about the whole engine. It gets a focused execution context and returns a focused result.
 
 ---
 
@@ -126,7 +126,7 @@ public class StepResult
 }
 ```
 
-The two most important parts are `Status` — what happened — and `Outputs` — what data the step produced. Those outputs are written into workflow state and become available to downstream nodes.
+The two most important parts are `Status`, what happened, and `Outputs`, what data the step produced. For normal successful execution, outputs are written into workflow state and become available to downstream nodes.
 
 ---
 
@@ -156,27 +156,27 @@ StepResult.AwaitingInput(outputs);
 
 ### Success and failure
 
-| Status      | Meaning                                                              |
-| ----------- | -------------------------------------------------------------------- |
+| Status | Meaning |
+| --- | --- |
 | `Succeeded` | The step completed successfully and its outputs are written to state |
-| `Failed`    | The step failed and the engine records the error                     |
-| `Skipped`   | The step was bypassed                                                |
+| `Failed` | The step failed and the engine records the error |
+| `Skipped` | Status value exists; the sequential runner currently treats it like a non-failed result |
 
 ### Continue or repeat
 
-| Status              | Meaning                                              |
-| ------------------- | ---------------------------------------------------- |
-| `NeedsContinuation` | The same step should run again                       |
-| `Handoff`           | Control is transferred to another agent              |
-| `AwaitingInput`     | The workflow pauses until a new user message arrives |
+| Status | Meaning |
+| --- | --- |
+| `NeedsContinuation` | The workflow checkpoints and stops; resume continues at the same node |
+| `Handoff` | Control is transferred to another agent |
+| `AwaitingInput` | The workflow pauses until a new user message arrives |
 
 ### Pause and resume
 
-| Status        | Meaning                                                    |
-| ------------- | ---------------------------------------------------------- |
+| Status | Meaning |
+| --- | --- |
 | `Interrupted` | Execution pauses until external input resumes the workflow |
 
-`StepResult` is more than an output container — it is also a control-flow signal to the engine.
+`StepResult` is more than an output container. It is also a control-flow signal to the engine.
 
 ---
 
@@ -189,19 +189,21 @@ flowchart TD
     A[Resolve node inputs] --> B[Create StepContext]
     B --> C[Execute step]
     C --> D[Get StepResult]
-    D --> E[Write outputs to state]
-    E --> F[Emit step events]
-    F --> G[Evaluate outgoing edges]
+    D --> E[Emit step event]
+    E --> F[Handle status]
+    F --> G[Write outputs to state when applicable]
+    G --> H[Evaluate outgoing edges]
 ```
 
 1. Spectra resolves node inputs from workflow state
 2. it builds the `StepContext`
 3. it calls `ExecuteAsync`
-4. it writes any outputs into workflow state
-5. it emits events
-6. it evaluates the next edges in the graph
+4. it emits `StepCompletedEvent` or `StepInterruptedEvent`
+5. it handles the returned `StepStatus`
+6. it writes outputs into workflow state when the status continues execution
+7. it evaluates the next edges in the graph
 
-That lifecycle is the same whether the step is a prompt, an agent, a custom operation, or a subgraph.
+Statuses such as `Failed`, `Interrupted`, and `NeedsContinuation` stop before normal output application. `AwaitingInput` applies outputs before pausing.
 
 ---
 
@@ -244,7 +246,7 @@ if (context.IsStreaming)
 }
 ```
 
-Built-in step types such as prompt, agent, and session workflows support streaming directly.
+Built-in `PromptStep`, `AgentStep`, and `SessionStep` support streaming directly.
 
 ---
 
@@ -272,28 +274,34 @@ Spectra includes several built-in step types.
 
 ### LLM and agent steps
 
-| Step                   | StepType              | Purpose                                                             | Guide                                  |
-| ---------------------- | --------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| `PromptStep`           | `"prompt"`            | Single LLM completion with prompt resolution and optional streaming | [Prompt Steps](../llm/prompt-steps.md) |
-| `StructuredOutputStep` | `"structured_output"` | LLM response constrained to structured JSON output                  | [Prompt Steps](../llm/prompt-steps.md) |
-| `AgentStep`            | `"agent"`             | Autonomous tool-using agent loop                                    | [Agent Step](../llm/agent-step.md)     |
+| Step | StepType | Purpose | Guide |
+| --- | --- | --- | --- |
+| `PromptStep` | `"prompt"` | Single LLM completion with prompt resolution and optional streaming | [Prompt Steps](../llm/prompt-steps.md) |
+| `StructuredOutputStep` | `"structured_output"` | LLM response constrained to structured JSON output | [Prompt Steps](../llm/prompt-steps.md) |
+| `AgentStep` | `"agent"` | Autonomous tool-using agent loop | [Agent Step](../llm/agent-step.md) |
 
 ### Orchestration steps
 
-| Step           | StepType     | Purpose                                        | Guide                                 |
-| -------------- | ------------ | ---------------------------------------------- | ------------------------------------- |
-| `SubgraphStep` | `"subgraph"` | Run a nested workflow inside a parent workflow  | [Subgraphs](../advanced/subgraphs.md) |
+| Step | StepType | Purpose | Guide |
+| --- | --- | --- | --- |
+| `SubgraphStep` | `"subgraph"` | Run a nested workflow inside a parent workflow | [Subgraphs](../advanced/subgraphs.md) |
+
+`SubgraphStep` depends on `IWorkflowRunner`, so register it explicitly in applications that use subgraph nodes.
 
 ### Memory steps
 
-| Step               | StepType          | Purpose                              | Guide                                                  |
-| ------------------ | ----------------- | ------------------------------------ | ------------------------------------------------------ |
-| `MemoryStoreStep`  | `"memory.store"`  | Persist data into long-term memory   | [Memory & Threading](memory-threading.md#memory-steps) |
+| Step | StepType | Purpose | Guide |
+| --- | --- | --- | --- |
+| `MemoryStoreStep` | `"memory.store"` | Persist data into long-term memory | [Memory & Threading](memory-threading.md#memory-steps) |
 | `MemoryRecallStep` | `"memory.recall"` | Read data back from long-term memory | [Memory & Threading](memory-threading.md#memory-steps) |
 
 ### Session-based interaction
 
-`SessionStep` represents a different interaction style — a persistent conversational boundary rather than a one-shot unit of work. See [Sessions](sessions.md) for that model.
+| Step | StepType | Purpose | Guide |
+| --- | --- | --- | --- |
+| `SessionStep` | `"session"` | Persistent conversational boundary over turns | [Sessions](sessions.md) |
+
+`SessionStep` represents a different interaction style, a persistent conversational boundary rather than a one-shot unit of work. See [Sessions](sessions.md) for that model.
 
 ---
 

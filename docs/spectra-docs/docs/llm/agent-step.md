@@ -53,24 +53,22 @@ The loop stops when:
 ```csharp
 services.AddSpectra(builder =>
 {
-    builder.AddProvider<OpenAiCompatibleProvider>("openai", new OpenAiConfig
+    builder.AddOpenAi(config =>
     {
-        ApiKey = "sk-...",
-        DefaultModel = "gpt-4o"
+        config.ApiKey = "sk-...";
     });
 
-    builder.AddAgent("researcher", agent => agent
-        .WithProvider("openai")
-        .WithSystemPrompt("You are a research assistant. Use tools to find answers.")
-        .WithTools("web_search", "read_url"));
+    builder.AddTool(new WebSearchTool());
+    builder.AddTool(new ReadUrlTool());
 });
 
-var workflow = Spectra.Workflow("research")
-    .AddAgentStep("research", agent: "researcher", inputs: new
-    {
-        userPrompt = "{{inputs.question}}",
-        maxIterations = 15
-    })
+var workflow = WorkflowBuilder.Create("research")
+    .AddAgent("researcher", "openai", "gpt-4o", agent => agent
+        .WithSystemPrompt("You are a research assistant. Use tools to find answers."))
+    .AddAgentNode("research", "researcher", node => node
+        .WithUserPrompt("{{inputs.question}}")
+        .WithTools("web_search", "read_url")
+        .WithMaxIterations(15))
     .Build();
 ```
 
@@ -102,8 +100,8 @@ Do not use it for simple one-shot tasks like summarization or rewriting. In thos
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
-| `agent` | `string` | — | Registered agent ID |
-| `provider` | `string` | — | Provider name when `agent` is not set |
+| `agentId` | `string` | — | Registered agent ID |
+| `provider` | `string` | — | Provider name when `agentId` is not set |
 | `model` | `string` | `"unknown"` | Model identifier |
 | `userPrompt` | `string` | — | Task for the agent |
 | `userPromptRef` | `string` | — | Prompt registry reference |
@@ -111,8 +109,8 @@ Do not use it for simple one-shot tasks like summarization or rewriting. In thos
 | `systemPromptRef` | `string` | — | Prompt registry reference for system prompt |
 | `tools` | `List<string>` | — | Explicit tool whitelist |
 | `maxIterations` | `int` | `10` | Max LLM calls before stopping |
-| `tokenBudget` | `int` | `0` | Tracked cumulative token budget |
-| `outputSchema` | `string` | — | JSON schema for final response validation |
+| `tokenBudget` | `int` | `0` | Recorded on the node, but not enforced by `AgentStep` yet |
+| `outputSchema` | `string` | — | Requires the final response to be valid JSON |
 | `temperature` | `double` | `0.7` | Sampling temperature |
 | `maxTokens` | `int` | `2048` | Max tokens per LLM call |
 | `messages` | `List<LlmMessage>` | — | Existing conversation for re-entry |
@@ -135,7 +133,8 @@ Depending on configuration, Spectra can also inject tools automatically:
 
 - `transfer_to_agent` for handoffs
 - `delegate_to_agent` for supervisors
-- `recall_memory` and `store_memory` for memory-enabled agents
+
+Memory tools (`recall_memory` and `store_memory`) exist, but the default `AgentStep` registration does not currently wire `MemoryOptions.AutoInjectAgentTools` through. Use explicit memory steps or explicitly registered tools when you need memory in agent loops.
 
 ### Parallel execution
 
@@ -152,8 +151,8 @@ That means one iteration can gather multiple results without waiting for each ca
 | Guard | Behavior |
 | --- | --- |
 | **Max iterations** | Stops after the configured number of LLM calls |
-| **Token budget** | Tracks cumulative token use across iterations |
-| **Output schema** | Validates the final response as JSON when configured |
+| **Token budget** | Stored as configuration today; token use is tracked in outputs but not used to stop the loop |
+| **Output schema** | Requires the final response to parse as JSON when configured |
 | **Escalation** | Hands off when the agent cannot finish normally |
 
 ### Output schema
@@ -162,7 +161,7 @@ If `outputSchema` is set, the final response is parsed as JSON.
 
 If parsing fails, the step returns a failed result.
 
-This is useful when you want the final agent output to be machine-readable.
+The current implementation checks JSON validity and returns `parsedResponse`; it does not validate against the schema contents yet. This is useful when you want the final agent output to be machine-readable.
 
 ---
 
@@ -194,8 +193,7 @@ When a handoff happens, the agent controls how much conversation is passed forwa
 Example:
 
 ```csharp
-builder.AddAgent("triage", agent => agent
-    .WithProvider("openai")
+builder.AddAgent("triage", "openai", "gpt-4o", agent => agent
     .WithSystemPrompt("Route customer issues to the right team.")
     .WithHandoffTargets("billing", "technical", "general")
     .WithConversationScope(ConversationScope.Full));
@@ -208,15 +206,14 @@ builder.AddAgent("triage", agent => agent
 If an agent cannot finish, it can escalate instead of stopping silently.
 
 ```csharp
-builder.AddAgent("analyst", agent => agent
-    .WithProvider("openai")
+builder.AddAgent("analyst", "openai", "gpt-4o", agent => agent
     .WithEscalationTarget("senior-analyst"));
 ```
 
 To pause for a human:
 
 ```csharp
-builder.AddAgent("analyst", agent => agent
+builder.AddAgent("analyst", "openai", "gpt-4o", agent => agent
     .WithEscalationTarget("human"));
 ```
 

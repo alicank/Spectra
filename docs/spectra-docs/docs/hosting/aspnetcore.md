@@ -41,7 +41,7 @@ builder.Services.AddSpectra(spectra =>
     spectra.AddOpenRouter(config =>
     {
         config.ApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")!;
-        config.DefaultModel = "openai/gpt-4o-mini";
+        config.Model = "openai/gpt-4o-mini";
     });
 
     spectra.AddWorkflowsFromDirectory("./workflows");
@@ -96,12 +96,11 @@ Use this when you want to execute a workflow and wait for the final result.
 {
   "runId": "run_abc123",
   "workflowId": "my-workflow",
+  "status": "Completed",
   "success": true,
   "errors": [],
   "artifacts": {},
-  "context": {
-    "nodes.summarize.output.response": "The document covers..."
-  },
+  "context": {},
   "currentNodeId": null
 }
 ```
@@ -264,7 +263,7 @@ and so on.
 
 ## Auth and middleware
 
-`MapSpectra()` returns an `IEndpointConventionBuilder`, so you can apply normal ASP.NET Core endpoint configuration.
+`MapSpectra()` returns a `RouteGroupBuilder`, so you can apply normal ASP.NET Core endpoint configuration.
 
 ```csharp
 app.MapSpectra()

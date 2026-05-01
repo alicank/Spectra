@@ -79,7 +79,7 @@ public abstract class CheckpointStoreTestBase<T> where T : ICheckpointStore
         Assert.Equal(5, loaded!.StepsCompleted);
         Assert.Equal(CheckpointStatus.Completed, loaded.Status);
     }
-    
+
     [Fact]
     public async Task SaveAndLoad_PreservesCancelledStatus()
     {

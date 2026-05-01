@@ -1,6 +1,6 @@
 # A/B Testing & Experimentation
 
-Spectra's [checkpoint forking](../execution/time-travel.md) lets you branch execution from any point in a completed (or in-progress) run. This turns every checkpoint into a laboratory — change one variable, re-run from that point, compare outcomes.
+Spectra's [checkpoint forking](../execution/time-travel.md) lets you branch execution from any saved checkpoint in a completed or in-progress run. This turns every checkpoint into a laboratory - change one variable, re-run from that point, compare outcomes.
 
 ---
 
@@ -8,18 +8,18 @@ Spectra's [checkpoint forking](../execution/time-travel.md) lets you branch exec
 
 ```
 Original Run "run-001"
-  ├── 0: classify     ── "urgent"
-  ├── 1: extract      ── pulled 42 records
-  ├── 2: summarize    ── used gpt-4o, cost $0.12     ◄── fork point
-  └── 3: publish      ── sent report
+  0: classify   -> "urgent"                 checkpoint 0
+  1: extract    -> pulled 42 records         checkpoint 1  < fork point
+  2: summarize  -> used gpt-4o, cost $0.12   checkpoint 2
+  3: publish    -> sent report               checkpoint 3
 
-Fork A "fork-gpt4o-mini" (from checkpoint 2, model = gpt-4o-mini)
-  └── 2: summarize    ── used gpt-4o-mini, cost $0.01
-      └── 3: publish   ── sent report
+Fork A "fork-gpt4o-mini" (from checkpoint 1, model = gpt-4o-mini)
+  2: summarize  -> used gpt-4o-mini, cost $0.01
+  3: publish    -> sent report
 
-Fork B "fork-claude" (from checkpoint 2, model = claude-sonnet)
-  └── 2: summarize    ── used claude-sonnet, cost $0.08
-      └── 3: publish   ── sent report
+Fork B "fork-claude" (from checkpoint 1, model = claude-sonnet)
+  2: summarize  -> used claude-sonnet, cost $0.08
+  3: publish    -> sent report
 ```
 
 All three runs share the same classify and extract work. Only the summarize step (and everything after it) is re-executed with different parameters.
@@ -33,7 +33,7 @@ Which model produces the best summary for your use case? Fork from the same chec
 ```csharp
 // Original run already completed with gpt-4o
 var originalRunId = "run-001";
-var forkPoint = 2; // After "extract", before "summarize"
+var forkPoint = 1; // Checkpoint after "extract", before "summarize"
 
 // Fork A: Try gpt-4o-mini (cheaper)
 var forkA = await runner.ForkAndRunAsync(workflow, originalRunId, forkPoint,
@@ -65,17 +65,17 @@ var forkB = await runner.ForkAndRunAsync(workflow, originalRunId, forkPoint,
         }}
     });
 
-// Compare results
-var resultOriginal = await checkpointStore.LoadAsync("run-001");
-var resultMini = await checkpointStore.LoadAsync("experiment-mini");
-var resultClaude = await checkpointStore.LoadAsync("experiment-claude");
+// Compare latest checkpoints
+var originalCheckpoint = await checkpointStore.LoadAsync("run-001");
+var miniCheckpoint = await checkpointStore.LoadAsync("experiment-mini");
+var claudeCheckpoint = await checkpointStore.LoadAsync("experiment-claude");
 ```
 
 ---
 
 ## Example: Tune Parameters
 
-Same model, different temperature — which produces more consistent output?
+Same model, different temperature - which produces more consistent output?
 
 ```csharp
 var temperatures = new[] { 0.0, 0.3, 0.7, 1.0 };
@@ -125,14 +125,14 @@ foreach (var (style, prompt) in prompts)
 
 ## Tracing Experiment Lineage
 
-Every forked run carries `ParentRunId` and `ParentCheckpointIndex`. Use `GetLineageAsync` to trace the ancestry:
+Every forked run starts with a checkpoint carrying `ParentRunId` and `ParentCheckpointIndex`. Use `GetLineageAsync` to trace the ancestry:
 
 ```csharp
 var lineage = await checkpointStore.GetLineageAsync("experiment-claude");
-// Returns: [run-001 (checkpoint 0) → experiment-claude (checkpoint 0)]
+// Returns the ancestor checkpoint chain, ending with experiment-claude's first checkpoint.
 ```
 
-This creates a natural audit trail: "experiment-claude was forked from run-001 at checkpoint 2, with the summarizer agent overridden to use Claude."
+This creates a natural audit trail: "experiment-claude was forked from run-001 at checkpoint 1, with the summarizer agent overridden to use Claude."
 
 ---
 

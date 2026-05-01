@@ -1118,7 +1118,7 @@ public class WorkflowRunnerTests
     }
 
     // ─── no edges = single node workflow ────────────────────────────
-    
+
     [Fact]
     public async Task SetsRunStatus_ToCompleted_OnSuccess()
     {

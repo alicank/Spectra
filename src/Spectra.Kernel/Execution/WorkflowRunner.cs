@@ -549,8 +549,11 @@ public class WorkflowRunner : IWorkflowRunner
 
             if (result.Status == StepStatus.AwaitingInput)
             {
+                await ApplyOutputsWithEvents(
+                    workflow, node, state, result.Outputs, cancellationToken);
+
                 finalStatus = CheckpointStatus.AwaitingInput;
-                if (_checkpointOptions.CheckpointOnContinuation)
+                if (_checkpointOptions.CheckpointOnAwaitingInput)
                 {
                     await SaveCheckpointAsync(
                         workflow, state, null, node.Id,
@@ -1170,6 +1173,10 @@ public class WorkflowRunner : IWorkflowRunner
         }
 
         _stateMapper.ApplyOutputs(node, state, outputs);
+
+        // Always mirror node outputs to state.Nodes so {{nodes.X.Y}} resolves
+        // regardless of whether the node has output mappings.
+        state.Nodes[node.Id] = outputs;
     }
 
     private static string? ResolveHandoffTarget(WorkflowDefinition workflow, string targetAgentId)

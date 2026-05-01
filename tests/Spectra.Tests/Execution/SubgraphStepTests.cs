@@ -104,6 +104,12 @@ public class SubgraphStepTests
         {
             throw new NotImplementedException();
         }
+
+        public Task<WorkflowState> SendMessageAsync(WorkflowDefinition workflow, string runId, string userMessage,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     // ── Tests ──

@@ -7,15 +7,16 @@ Tools are functions that agents can call during their execution loop. Spectra pr
 ```csharp
 public interface ITool
 {
+    string Name { get; }
     ToolDefinition Definition { get; }
-    Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default);
+    Task<ToolResult> ExecuteAsync(Dictionary<string, object?> arguments, WorkflowState state, CancellationToken ct = default);
 }
 
 public class ToolDefinition
 {
-    public string Name { get; }
-    public string Description { get; }
-    public List<ToolParameter> Parameters { get; }
+    public required string Name { get; set; }
+    public required string Description { get; set; }
+    public List<ToolParameter> Parameters { get; set; } = [];
 }
 ```
 
@@ -24,21 +25,23 @@ public class ToolDefinition
 ```csharp
 public class WeatherTool : ITool
 {
+    public string Name => "get_weather";
+
     public ToolDefinition Definition => new()
     {
         Name = "get_weather",
         Description = "Get current weather for a city",
-        Parameters = new()
-        {
-            new ToolParameter("city", "string", "City name", required: true)
-        }
+        Parameters =
+        [
+            new ToolParameter { Name = "city", Type = "string", Description = "City name", Required = true }
+        ]
     };
 
-    public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct)
+    public async Task<ToolResult> ExecuteAsync(Dictionary<string, object?> arguments, WorkflowState state, CancellationToken ct)
     {
-        var city = parameters["city"].ToString()!;
+        var city = arguments["city"]?.ToString()!;
         var weather = await FetchWeatherAsync(city, ct);
-        return ToolResult.Success(weather);
+        return ToolResult.Ok(weather);
     }
 }
 ```
@@ -50,15 +53,15 @@ public class WeatherTool : ITool
 ```csharp
 services.AddSpectra(builder =>
 {
-    builder.AddTool<WeatherTool>();
-    builder.AddTool<DatabaseQueryTool>();
+    builder.AddTool(new WeatherTool());
+    builder.AddTool(new DatabaseQueryTool());
 });
 ```
 
 ### Auto-Discovery with Attributes
 
 ```csharp
-[SpectraTool("search_docs", "Search the documentation for a query")]
+[SpectraTool]
 public class SearchDocsTool : ITool { ... }
 ```
 
@@ -66,22 +69,25 @@ public class SearchDocsTool : ITool { ... }
 builder.AddToolsFromAssembly(typeof(SearchDocsTool).Assembly);
 ```
 
-The `ToolDiscovery` service scans assemblies for classes with `[SpectraTool]` and registers them automatically.
+Spectra scans the assembly for classes marked with `[SpectraTool]` and registers them automatically.
 
 ## Tool Resilience
 
-Wrap tools with retry, timeout, and circuit breaker policies:
+All registered tools are automatically wrapped with circuit breaker protection via `ResilientToolDecorator`. Configure the policy via `ToolResilienceOptions`:
 
 ```csharp
-builder.AddTool<ExternalApiTool>(resilience: new ToolResilienceOptions
+// ToolResilienceOptions controls circuit breaker behaviour
+public record ToolResilienceOptions
 {
-    MaxRetries = 3,
-    Timeout = TimeSpan.FromSeconds(30),
-    CircuitBreakerThreshold = 5
-});
+    public int FailureThreshold { get; init; } = 5;
+    public TimeSpan CooldownPeriod { get; init; } = TimeSpan.FromSeconds(60);
+    public int HalfOpenMaxAttempts { get; init; } = 1;
+    public int SuccessThresholdToClose { get; init; } = 1;
+    public Dictionary<string, string> FallbackTools { get; init; } = new();
+}
 ```
 
-The `ResilientToolDecorator` wraps any tool with Polly-style resilience. The `DefaultToolResiliencePolicy` provides sensible defaults.
+The `DefaultToolResiliencePolicy` provides sensible defaults and is applied globally to all tools in the registry.
 
 ## MCP Integration
 
@@ -90,22 +96,15 @@ Spectra can connect to any [MCP server](https://modelcontextprotocol.io/) and us
 ### Stdio Transport
 
 ```csharp
-builder.AddMcpServer("filesystem", new McpServerConfig
-{
-    Command = "npx",
-    Args = new[] { "-y", "@modelcontextprotocol/server-filesystem", "/path/to/files" },
-    Transport = "stdio"
-});
+builder.AddMcpServer("filesystem", mcp => mcp
+    .UseStdio("npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"));
 ```
 
 ### SSE Transport
 
 ```csharp
-builder.AddMcpServer("remote-tools", new McpServerConfig
-{
-    Url = "https://my-mcp-server.com/sse",
-    Transport = "sse"
-});
+builder.AddMcpServer("remote-tools", mcp => mcp
+    .UseSse("https://my-mcp-server.com/sse"));
 ```
 
 ### How It Works
@@ -115,33 +114,24 @@ builder.AddMcpServer("remote-tools", new McpServerConfig
 3. `McpToolAdapter` wraps each MCP tool as an `ITool`
 4. Tools are registered in the `IToolRegistry` and available to agents
 
-### Per-Agent MCP Servers
-
-Different agents can have access to different MCP servers:
-
-```csharp
-builder.AddAgent("file-agent", agent => agent
-    .WithMcpServer("filesystem")
-    .WithMcpServer("git"));
-
-builder.AddAgent("data-agent", agent => agent
-    .WithMcpServer("database")
-    .WithMcpServer("analytics"));
-```
-
 ### MCP Server Config Builder
 
+Use the fluent overload for advanced configuration:
+
 ```csharp
-var config = McpServerConfig.Builder()
-    .WithCommand("node", "server.js")
+builder.AddMcpServer("data-tools", mcp => mcp
+    .UseStdio("node", "server.js")
     .WithEnvironment("API_KEY", apiKey)
     .WithResilience(new McpResilienceOptions
     {
         MaxRetries = 2,
-        ConnectionTimeout = TimeSpan.FromSeconds(10)
-    })
-    .Build();
+        Timeout = TimeSpan.FromSeconds(10)
+    }));
 ```
+
+### Per-Agent MCP Servers
+
+MCP servers are registered globally at the `SpectraBuilder` level. Once registered, any agent can reference their tools by name via `WithTools(...)` on the agent node.
 
 ## Built-in Tools
 

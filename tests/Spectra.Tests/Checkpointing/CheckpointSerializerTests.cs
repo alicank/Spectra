@@ -31,7 +31,7 @@ public class CheckpointSerializerTests
         Assert.Equal(checkpoint.Status, deserialized.Status);
         Assert.Equal(CheckpointSerializer.CurrentSchemaVersion, deserialized.SchemaVersion);
     }
-    
+
     [Fact]
     public void Roundtrip_PreservesCancelledStatus()
     {

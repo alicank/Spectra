@@ -18,12 +18,12 @@ A `.workflow.json` file maps directly to the same structure you'd build with the
     {
       "id": "greet",
       "stepType": "echo",
-      "inputs": { "message": "Hello from Spectra!" }
+      "parameters": { "message": "Hello from Spectra!" }
     },
     {
       "id": "farewell",
       "stepType": "echo",
-      "inputs": { "message": "Goodbye! You said: {{nodes.greet.output.message}}" }
+      "parameters": { "message": "Goodbye! You said: {{context.greet.message}}" }
     }
   ],
   "edges": [
@@ -45,7 +45,7 @@ var store = new JsonFileWorkflowStore("./workflows");
 var workflow = store.Get("hello-world");
 ```
 
-File names don't matter — the `id` field inside the JSON is used for lookup.
+For direct lookup, file names matter: `store.Get("hello-world")` loads `hello-world.workflow.json`. The `id` field is the workflow's runtime identity.
 
 For the full workflow definition format — nodes, edges, conditions, agents, subgraphs, state fields — see [Workflows & Graphs](../concepts/workflows.md).
 

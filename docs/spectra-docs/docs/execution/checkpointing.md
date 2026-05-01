@@ -72,7 +72,7 @@ builder.AddInMemoryCheckpoints(opts =>
 | Frequency | Behavior |
 | --- | --- |
 | `EveryNode` | Save after every step. Safest and most complete |
-| `StatusChangeOnly` | Save only when run status changes |
+| `StatusChangeOnly` | Save on terminal status changes; continuation, interrupts, and awaiting input still use their own checkpoint flags |
 | `Disabled` | Do not save automatically |
 
 For most workflows, `EveryNode` is the safest default.
@@ -87,9 +87,10 @@ Each checkpoint records the current execution status.
 | --- | --- | --- |
 | `InProgress` | Workflow was running or paused mid-run | `ResumeAsync(...)` |
 | `Completed` | Workflow finished successfully | Cannot resume; fork instead |
-| `Failed` | A step failed | Inspect, fix, then fork or rerun |
+| `Failed` | A step failed | Inspect, fix, then resume, fork, or rerun |
 | `Interrupted` | Waiting for human input | `ResumeWithResponseAsync(...)` |
 | `AwaitingInput` | Waiting for a session message | `SendMessageAsync(...)` |
+| `Cancelled` | Run was intentionally cancelled | Cannot resume; fork or rerun |
 
 This status is what tells the runner how a saved execution can continue.
 
@@ -103,9 +104,9 @@ To continue from the latest checkpoint:
 var result = await runner.ResumeAsync(workflow, runId: "run-abc-123");
 ```
 
-The runner loads the latest checkpoint for that run, restores workflow state, and continues from the saved next node.
+The runner loads the latest checkpoint for that run, restores workflow state, and continues execution with that checkpoint context.
 
-If the run is already completed, resume does not continue it. In that case, use [forking](time-travel.md).
+If the run is already completed or cancelled, resume does not continue it. In that case, use [forking](time-travel.md) or start a new run.
 
 ---
 
@@ -124,6 +125,9 @@ A checkpoint stores everything needed to continue execution.
 | `Status` | Current lifecycle state |
 | `PendingInterrupt` | Interrupt request waiting for a response |
 | `ParentRunId` | Source run if this run was forked |
+| `ParentCheckpointIndex` | Source checkpoint index if this run was forked |
+| `SchemaVersion` | Checkpoint serialization schema version |
+| `CreatedAt` / `UpdatedAt` | Checkpoint timestamps |
 | `TenantId` / `UserId` | Identity context from the run |
 
 At a practical level, this means Spectra saves both:
@@ -151,7 +155,7 @@ You can also purge a run manually:
 await checkpointStore.PurgeAsync("run-abc-123");
 ```
 
-Use retention settings to prevent old checkpoint history from growing without bound.
+The built-in stores append checkpoint history for each run. Use `PurgeAsync(...)` for explicit cleanup; if you need automatic trimming based on `MaxCheckpointCount` or `RetentionPeriod`, implement that policy in your host or custom checkpoint store.
 
 ---
 

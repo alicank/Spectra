@@ -11,7 +11,7 @@ They are how you model decisions such as:
 - continue when a score is high enough
 - send low-confidence results for review
 - retry when a step says it should retry
-- route failures into a fallback path
+- route recoverable outcomes into a fallback path
 
 In Spectra, conditions live on edges. After a node finishes, the runner evaluates its outgoing edges in order and takes the **first edge that matches**.
 
@@ -37,7 +37,7 @@ When `analyze` completes, Spectra evaluates its outgoing edges against the curre
 
 - if the first condition matches, execution follows that edge
 - otherwise it keeps checking the next edge
-- if no conditional edge matches, an unconditional edge can act as a fallback
+- an edge without a condition matches immediately, so it can act as a fallback when placed after conditional edges
 - if nothing matches at all, that path ends there
 
 ---
@@ -67,8 +67,8 @@ var workflow = WorkflowBuilder.Create("branching-demo")
     { "id": "notify",  "stepType": "Notify"  }
   ],
   "edges": [
-    { "source": "analyze", "target": "report",  "condition": "nodes.analyze.findings.count > 0"  },
-    { "source": "analyze", "target": "notify",  "condition": "nodes.analyze.findings.count == 0" }
+    { "from": "analyze", "to": "report",  "condition": "nodes.analyze.findings.count > 0"  },
+    { "from": "analyze", "to": "notify",  "condition": "nodes.analyze.findings.count == 0" }
   ]
 }
 ```
@@ -81,16 +81,19 @@ In this workflow, `analyze` writes data into workflow state, the outgoing edge c
 
 Conditions are evaluated against workflow state using dot-separated paths:
 
-- `inputs.*` — incoming workflow values
-- `nodes.<nodeId>.*` — node outputs and related data
-- `global.*` — shared workflow-wide values
+- `Inputs.*` - incoming workflow values
+- `Context.*` - shared workflow state
+- `Artifacts.*` - named artifacts
+- `Errors` - accumulated error messages
+- `RunId` / `CurrentNodeId` - run metadata
+- `nodes.<nodeId>.*` - shorthand for `Context.<nodeId>.*`, commonly unmapped node outputs
 
 Examples:
 
 ```text
 nodes.analyze.findings.count > 0
-inputs.priority == 'high'
-global.retryCount >= 3
+Inputs.priority == 'high'
+Context.retryCount >= 3
 ```
 
 This path-based model keeps conditions easy to read and easy to debug.
@@ -104,12 +107,12 @@ This path-based model keeps conditions easy to read and easy to debug.
 | `==`         | `nodes.check.status == 'Succeeded'`       | Equality              |
 | `!=`         | `nodes.check.status != 'Failed'`          | Inequality            |
 | `>`          | `nodes.score.value > 0.8`                 | Greater than          |
-| `>=`         | `global.retryCount >= 3`                  | Greater than or equal |
+| `>=`         | `Context.retryCount >= 3`                 | Greater than or equal |
 | `<`          | `nodes.items.count < 10`                  | Less than             |
 | `<=`         | `nodes.score.value <= 0.5`                | Less than or equal    |
 | `contains`   | `nodes.message.output contains 'error'`   | Substring match       |
-| `startswith` | `inputs.fileName startswith 'test'`       | Prefix match          |
-| `endswith`   | `inputs.fileName endswith '.json'`        | Suffix match          |
+| `startswith` | `Inputs.fileName startswith 'test'`       | Prefix match          |
+| `endswith`   | `Inputs.fileName endswith '.json'`        | Suffix match          |
 
 For most workflows, these are enough to model routing logic clearly.
 
@@ -135,10 +138,10 @@ A condition can also be just a path by itself:
 ```text
 nodes.isReady.output
 nodes.search.results
-global.shouldContinue
+Context.shouldContinue
 ```
 
-Spectra treats the value as a truthiness check. Common falsy values include `null`, `false`, `0`, empty string, and empty collection. Everything else is treated as truthy.
+Spectra treats the value as a truthiness check. Common falsy values include `null`, `false`, numeric `0`, empty string, the string `"false"`, and empty object collections. Everything else is treated as truthy.
 
 This is useful for simple yes/no or present/missing branching.
 
@@ -162,7 +165,7 @@ In this example: go to `retry` if retry is needed, otherwise go to `done`. This 
 Since Spectra takes the first matching edge, order is part of the workflow logic:
 
 ```csharp
-.AddEdge("review", "urgent", condition: "inputs.priority == 'high'")
+.AddEdge("review", "urgent", condition: "Inputs.priority == 'high'")
 .AddEdge("review", "normal")
 ```
 
@@ -186,7 +189,7 @@ This lets the workflow itself encode decision logic instead of forcing every ste
 
 ## Failure and fallback paths
 
-Conditional edges are also useful for recovery paths. A workflow can branch based on whether a node succeeded, failed, or requested a retry, as long as that information is written into workflow state at a stable path:
+Conditional edges are also useful for recovery paths. A workflow can branch based on whether a node reported success, a recoverable problem, or a retry request, as long as that information is written into workflow state at a stable path:
 
 ```csharp
 var workflow = WorkflowBuilder.Create("error-handling")
@@ -194,9 +197,11 @@ var workflow = WorkflowBuilder.Create("error-handling")
     .AddNode("fallback", "FallbackHandler")
     .AddNode("next",     "NextStep")
     .AddEdge("risky", "next",     condition: "nodes.risky.status == 'Succeeded'")
-    .AddEdge("risky", "fallback", condition: "nodes.risky.status == 'Failed'")
+    .AddEdge("risky", "fallback", condition: "nodes.risky.status == 'NeedsFallback'")
     .Build();
 ```
+
+If a step returns `StepStatus.Failed`, the sequential runner stops the workflow instead of evaluating outgoing edges from that node. To route to a fallback branch, model the condition as a successful step output such as `status = NeedsFallback`, or use resilience/fallback support around the operation.
 
 This pattern makes recovery visible in the graph itself. See [Runner](../execution/runner.md) for execution and failure behavior.
 

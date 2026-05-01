@@ -9,58 +9,65 @@ All events flow through `IEventSink`:
 ```csharp
 public interface IEventSink
 {
-    Task EmitAsync(WorkflowEvent evt, CancellationToken ct = default);
+    Task PublishAsync(WorkflowEvent evt, CancellationToken ct = default);
 }
 ```
 
-Events are emitted for workflow lifecycle, step execution, agentic loops, MCP tool calls, handoffs, and streaming.
+Events are emitted for workflow lifecycle, step execution, state changes, branch evaluation, parallel batches, agentic loops, MCP tool calls, handoffs, sessions, resilience, and streaming.
 
 ## Event Types
 
 | Event | Emitted When |
 |-------|-------------|
-| `WorkflowStarted` | Workflow execution begins |
-| `WorkflowCompleted` | Workflow finishes (success or failure) |
-| `StepStarted` | A step begins executing |
-| `StepCompleted` | A step finishes |
-| `StepFailed` | A step throws or returns failure |
-| `StateChanged` | Workflow state is modified |
-| `EdgeEvaluated` | A condition on an edge is evaluated |
-| `CheckpointSaved` | A checkpoint is persisted |
-| `InterruptRequested` | A step requests an interrupt |
-| `AgentIterationStarted` | An agent loop begins a new iteration |
-| `ToolCallStarted` / `ToolCallCompleted` | A tool is invoked |
-| `HandoffInitiated` | An agent delegates to another agent |
-| `SessionTurnCompleted` | A conversational turn finishes |
-| `WorkflowForked` | Execution is forked from a checkpoint |
+| `WorkflowStartedEvent` | Workflow execution begins |
+| `WorkflowCompletedEvent` | Workflow finishes |
+| `WorkflowResumedEvent` | Workflow resumes from a checkpoint |
+| `WorkflowForkedEvent` | Execution is forked from a checkpoint |
+| `StepStartedEvent` | A step begins executing |
+| `StepCompletedEvent` | A step finishes, including failed step results |
+| `StepInterruptedEvent` | A step is interrupted |
+| `StateChangedEvent` | Workflow state is modified |
+| `BranchEvaluatedEvent` | A condition or default edge is evaluated |
+| `ParallelBatchStartedEvent` / `ParallelBatchCompletedEvent` | A parallel batch starts or finishes |
+| `TokenStreamEvent` | A token chunk is emitted |
+| `AgentIterationEvent` | An agent loop iteration completes |
+| `AgentToolCallEvent` | A tool is invoked inside an agent loop |
+| `AgentCompletedEvent` | An agent loop ends |
+| `AgentHandoffEvent` / `AgentHandoffBlockedEvent` | A handoff is accepted or blocked |
+| `AgentDelegationStartedEvent` / `AgentDelegationCompletedEvent` | A supervisor delegates work and receives the result |
+| `AgentEscalationEvent` | An agent escalates due to failure or budget exhaustion |
+| `SessionTurnCompletedEvent` | A conversational turn finishes |
+| `SessionAwaitingInputEvent` | A session waits for the next user message |
+| `SessionCompletedEvent` | A session exits |
+| `FallbackTriggeredEvent` | Provider fallback moves to the next candidate |
+| `QualityGateRejectedEvent` | A response fails a quality gate |
+| `FallbackExhaustedEvent` | All fallback candidates fail |
+| `ToolCircuitStateChangedEvent` | A tool circuit breaker changes state |
+| `ToolCallSkippedEvent` | A tool call is skipped by an open circuit |
+| `McpServerConnectedEvent` / `McpServerDisconnectedEvent` | An MCP server connects or disconnects |
+| `McpToolCallEvent` / `McpToolCallBlockedEvent` | An MCP tool runs or is blocked |
 
 ## Built-in Sinks
 
-**ConsoleEventSink** — Logs events to the console with color coding:
+**ConsoleEventSink** — Logs events to the console:
 
 ```csharp
 services.AddSpectra(builder =>
 {
-    builder.AddEventSink<ConsoleEventSink>();
+    builder.AddConsoleEvents();
 });
 ```
 
-**CompositeEventSink** — Forwards events to multiple sinks:
+**CompositeEventSink** — Forwards events to multiple sinks. When you register more than one sink, Spectra builds the composite for you:
 
 ```csharp
-builder.AddEventSink(new CompositeEventSink(
-    new ConsoleEventSink(),
-    new MyCustomSink()
-));
+builder.AddConsoleEvents();
+builder.AddEventSink(new MyCustomSink());
 ```
 
-**StreamingEventSink** — Pushes events to an `IEventStream` for real-time consumption (SSE, WebSocket):
+**StreamingEventSink** — Pushes events into the channel used by `runner.StreamAsync(...)`. The runner creates this internally when streaming is used.
 
-```csharp
-builder.AddEventSink<StreamingEventSink>();
-```
-
-**NullEventSink** — Discards all events (for testing or when you don't need observability).
+**NullEventSink** — Discards all events when no sink is configured.
 
 ## Writing a Custom Event Sink
 
@@ -71,11 +78,11 @@ public class ApplicationInsightsSink : IEventSink
 
     public ApplicationInsightsSink(TelemetryClient telemetry) => _telemetry = telemetry;
 
-    public Task EmitAsync(WorkflowEvent evt, CancellationToken ct)
+    public Task PublishAsync(WorkflowEvent evt, CancellationToken ct = default)
     {
-        _telemetry.TrackEvent(evt.Type, new Dictionary<string, string>
+        _telemetry.TrackEvent(evt.EventType, new Dictionary<string, string>
         {
-            ["workflowName"] = evt.WorkflowName,
+            ["workflowId"] = evt.WorkflowId,
             ["nodeId"] = evt.NodeId ?? "",
             ["runId"] = evt.RunId
         });
@@ -98,6 +105,6 @@ The `WorkflowRunner` and `ParallelScheduler` create spans automatically. To expo
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource(SpectraActivitySource.SourceName)
+        .AddSource(SpectraActivitySource.Name)
         .AddConsoleExporter());
 ```

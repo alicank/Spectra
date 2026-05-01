@@ -35,9 +35,10 @@ Use it for:
 === "Builder API"
 
     ```csharp
-    var workflow = Spectra.Workflow("summarize")
-        .AddPromptStep("summarize", agent: "openai",
-            prompt: "Summarize this in 3 bullets: {{inputs.text}}")
+    var workflow = WorkflowBuilder.Create("summarize")
+        .AddNode("summarize", "prompt", node => node
+            .WithParameter("agentId", "openai")
+            .WithParameter("userPrompt", "Summarize this in 3 bullets: {{inputs.text}}"))
         .Build();
     ```
 
@@ -49,7 +50,7 @@ Use it for:
         {
           "id": "summarize",
           "stepType": "prompt",
-          "agent": "openai",
+          "agentId": "openai",
           "inputs": {
             "userPrompt": "Summarize this in 3 bullets: {{inputs.text}}"
           }
@@ -65,8 +66,8 @@ Use it for:
 | `userPrompt` | `string` | — | Inline user prompt |
 | `userPromptRef` | `string` | — | Prompt ID from the prompt registry |
 | `systemPrompt` | `string` | — | Inline system prompt |
-| `systemPromptRef` | `string` | — | System prompt ID from the prompt registry |
-| `agent` | `string` | — | Registered agent ID |
+| `promptId` | `string` | — | Prompt registry ID used as fallback system prompt |
+| `agentId` | `string` | — | Registered agent ID |
 | `provider` | `string` | — | Provider name if no agent is used |
 | `model` | `string` | `"unknown"` | Model ID |
 | `temperature` | `double` | `0.7` | Sampling temperature |
@@ -87,10 +88,11 @@ For `PromptStep`, Spectra resolves prompts in this order.
 
 **System prompt**
 
-1. `systemPrompt`
-2. `systemPromptRef`
-3. agent system prompt or prompt reference
-4. no system prompt
+1. `systemPrompt` input
+2. agent's `SystemPromptRef` (from agent definition, resolved via prompt registry)
+3. agent's `SystemPrompt` (from agent definition, inline)
+4. `promptId` input (looked up in prompt registry)
+5. no system prompt
 
 All prompt templates support `{{...}}` expressions.
 
@@ -99,15 +101,14 @@ All prompt templates support `{{...}}` expressions.
 If the model supports vision, you can send images with the prompt:
 
 ```csharp
-var workflow = Spectra.Workflow("describe-image")
-    .AddPromptStep("describe", agent: "openai", inputs: new
-    {
-        userPrompt = "Describe what you see in this image.",
-        images = new[]
+var workflow = WorkflowBuilder.Create("describe-image")
+    .AddNode("describe", "prompt", node => node
+        .WithParameter("agentId", "openai")
+        .WithParameter("userPrompt", "Describe what you see in this image.")
+        .WithParameter("images", new[]
         {
             new { data = base64ImageData, mimeType = "image/png" }
-        }
-    })
+        }))
     .Build();
 ```
 
@@ -150,13 +151,11 @@ Use it for:
 ### Basic usage
 
 ```csharp
-var workflow = Spectra.Workflow("extract-entities")
-    .AddStep("extract", new StructuredOutputStep(providerRegistry, agentRegistry, promptRenderer),
-        inputs: new
-        {
-            agent = "openai",
-            userPrompt = "Extract all people and places from: {{inputs.text}}",
-            jsonSchema = """
+var workflow = WorkflowBuilder.Create("extract-entities")
+    .AddNode("extract", "structured_output", node => node
+        .WithParameter("agentId", "openai")
+        .WithParameter("userPrompt", "Extract all people and places from: {{inputs.text}}")
+        .WithParameter("jsonSchema", """
             {
                 "type": "object",
                 "properties": {
@@ -164,8 +163,7 @@ var workflow = Spectra.Workflow("extract-entities")
                     "places": { "type": "array", "items": { "type": "string" } }
                 }
             }
-            """
-        })
+            """))
     .Build();
 ```
 
@@ -175,7 +173,7 @@ var workflow = Spectra.Workflow("extract-entities")
 flowchart LR
     A[Resolve prompt] --> B[Call model in JSON mode]
     B --> C[Parse response as JSON]
-    C --> D[Expose rawResponse and parsedResponse]
+    C --> D[Return parsed keys or result + rawResponse]
 ```
 
 If `jsonSchema` is provided, Spectra uses structured JSON mode when the provider supports it.
@@ -186,21 +184,25 @@ If the response is not valid JSON, the step fails with the parse error and keeps
 
 ### Outputs
 
-`StructuredOutputStep` includes all `PromptStep` outputs, plus:
+Output shape depends on what the LLM returns:
 
-| Output | Type | Description |
-| --- | --- | --- |
-| `rawResponse` | `string` | Original LLM response before parsing |
-| `parsedResponse` | `JsonElement` | Parsed JSON result |
+| Case | Outputs |
+| --- | --- |
+| JSON object | The parsed key-value pairs become outputs directly (e.g. `nodes.extract.output.people`) |
+| JSON array or primitive | `result` (the parsed value) + `rawResponse` (original string) |
+| Invalid JSON | Fails with error; `rawResponse` preserved in output |
 
 ### Consuming structured output downstream
 
 ```csharp
-var workflow = Spectra.Workflow("extract-and-process")
-    .AddStep("extract", new StructuredOutputStep(...), inputs: new { ... })
-    .AddPromptStep("process", agent: "openai",
-        prompt: "Write bios for: {{nodes.extract.output.parsedResponse}}")
-    .Edge("extract", "process")
+var workflow = WorkflowBuilder.Create("extract-and-process")
+    .AddNode("extract", "structured_output", node => node
+        .WithParameter("agentId", "openai")
+        .WithParameter("userPrompt", "Extract all people and places from: {{inputs.text}}"))
+    .AddNode("process", "prompt", node => node
+        .WithParameter("agentId", "openai")
+        .WithParameter("userPrompt", "Write bios for: {{nodes.extract.output.people}}"))
+    .AddEdge("extract", "process")
     .Build();
 ```
 
