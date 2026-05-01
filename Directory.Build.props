@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
     <!-- Package version (bump this for each release) -->
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
 
     <!-- NuGet metadata -->
     <Authors>Alican K. Crepin</Authors>

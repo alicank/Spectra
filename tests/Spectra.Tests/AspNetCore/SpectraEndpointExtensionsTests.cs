@@ -354,7 +354,7 @@ public class SpectraEndpointExtensionsTests : IAsyncDisposable
         Assert.True(body.TryGetProperty("artifacts", out _));
         Assert.True(body.TryGetProperty("context", out _));
     }
-    
+
     [Fact]
     public async Task Run_Response_IncludesStatusField_AsCompletedOnSuccess()
     {
