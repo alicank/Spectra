@@ -94,18 +94,25 @@ public class OpenAiRequestMapperTests
         Assert.Equal(0.3, body["temperature"]!.GetValue<double>(), precision: 5);
     }
 
-    [Fact]
-    public void Maps_MaxTokens()
+    [Theory]
+    [InlineData("gpt-4o", "max_tokens")]
+    [InlineData("gpt-4.1-mini", "max_tokens")]
+    [InlineData("gpt-5-mini", "max_completion_tokens")]
+    [InlineData("gpt-5", "max_completion_tokens")]
+    [InlineData("gpt-5.4", "max_completion_tokens")]
+    [InlineData("o3-mini", "max_completion_tokens")]
+    [InlineData("o4-mini", "max_completion_tokens")]
+    public void Maps_MaxTokens_CorrectKeyByModel(string model, string expectedKey)
     {
         var request = new LlmRequest
         {
-            Model = "gpt-4o",
+            Model = model,
             Messages = [LlmMessage.FromText(LlmRole.User, "Hi")],
             MaxTokens = 500
         };
 
         var body = OpenAiRequestMapper.Map(request);
-        Assert.Equal(500, body["max_tokens"]!.GetValue<int>());
+        Assert.Equal(500, body[expectedKey]!.GetValue<int>());
     }
 
     [Fact]

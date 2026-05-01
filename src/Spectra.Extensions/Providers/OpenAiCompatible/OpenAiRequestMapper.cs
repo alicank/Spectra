@@ -16,11 +16,16 @@ internal static class OpenAiRequestMapper
             ["messages"] = MapMessages(request)
         };
 
-        if (request.Temperature.HasValue)
+        if (request.Temperature.HasValue && !IsReasoningModel(request.Model))
             body["temperature"] = request.Temperature.Value;
 
         if (request.MaxTokens.HasValue)
-            body["max_tokens"] = request.MaxTokens.Value;
+        {
+            var key = IsReasoningModel(request.Model)
+                ? "max_completion_tokens"
+                : "max_tokens";
+            body[key] = request.MaxTokens.Value;
+        }
 
         if (request.StopSequence is not null)
             body["stop"] = new JsonArray(JsonValue.Create(request.StopSequence));
@@ -226,6 +231,24 @@ internal static class OpenAiRequestMapper
         }
 
         body["tools"] = tools;
+    }
+    
+    private static bool IsReasoningModel (string? model)
+    {
+        if (string.IsNullOrEmpty(model))
+            return false;
+
+        // GPT-5 family (gpt-5, gpt-5-mini, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.4, etc.)
+        if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // o-series reasoning models (o1, o1-mini, o3, o3-mini, o4-mini, etc.)
+        if (model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o3", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o4", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private static string MapRole(LlmRole role) => role switch
